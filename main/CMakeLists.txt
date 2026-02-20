@@ -170,6 +170,8 @@ elseif(CONFIG_BOARD_TYPE_DU_CHATX)
     set(BOARD_TYPE "du-chatx")
 elseif(CONFIG_BOARD_TYPE_ESP32S3_Taiji_Pi)
     set(BOARD_TYPE "taiji-pi-s3")
+elseif(CONFIG_BOARD_TYPE_XIAOZHI_CARD)
+    set(BOARD_TYPE "xiaozhi-card")
 elseif(CONFIG_BOARD_TYPE_XINGZHI_Cube_0_85TFT_WIFI)
     set(BOARD_TYPE "xingzhi-cube-0.85tft-wifi")
 elseif(CONFIG_BOARD_TYPE_XINGZHI_Cube_0_85TFT_ML307)
@@ -308,6 +310,19 @@ idf_component_register(SRCS ${SOURCES}
                     EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
+                    REQUIRES 
+                        lvgl 
+                        esp_lvgl_port 
+                        app_update 
+                        78__esp-opus-encoder 
+                        78__esp-opus 
+                        esp_psram
+                        guage_bq27220
+                        charger_aw32001
+                        esp_epd_gdey027t91
+                    PRIV_REQUIRES 
+                        spi_flash 
+                        efuse
                     )
 
 # 使用 target_compile_definitions 来定义 BOARD_TYPE, BOARD_NAME

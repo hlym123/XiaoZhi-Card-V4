@@ -77,7 +77,7 @@ public:
                    DisplayFonts fonts);
 };
 
-// // SPI LCD显示器
+// SPI LCD显示器
 class SpiLcdDisplay : public LcdDisplay {
 public:
     SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
@@ -103,4 +103,14 @@ public:
                       bool mirror_x, bool mirror_y, bool swap_xy,
                       DisplayFonts fonts);
 };
+
+// SPI EPD 显示器
+class SpiEpdDisplay : public LcdDisplay {
+public:
+    SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+                    int width, int height, int offset_x, int offset_y,
+                    bool mirror_x, bool mirror_y, bool swap_xy,
+                    DisplayFonts fonts);
+};
+
 #endif // LCD_DISPLAY_H
