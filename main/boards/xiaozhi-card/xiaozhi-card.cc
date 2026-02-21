@@ -14,8 +14,7 @@
 #include "driver/sdspi_host.h" 
 #include "mcp_server.h"
 #include "assets/lang_config.h"
-#include "display/lcd_display.h"
-// #include "display/epd_display.h"
+#include "display/epd_display.h"
 #include <esp_sleep.h>
 #include <driver/gpio.h>
 #include "power_save_timer.h"

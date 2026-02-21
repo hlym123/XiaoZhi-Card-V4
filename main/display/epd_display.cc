@@ -1,4 +1,4 @@
-#include "lcd_display.h"
+#include "epd_display.h"
 #include "assets/lang_config.h"
 #include "settings.h"
 
@@ -13,7 +13,7 @@
 
 #include "board.h"
 
-#define TAG "LcdDisplay"
+#define TAG "EpdDisplay"
 
 // Color definitions for dark theme
 #define DARK_BACKGROUND_COLOR       lv_color_hex(0x121212)     // Dark background
@@ -67,7 +67,7 @@ const ThemeColors LIGHT_THEME = {
 
 LV_FONT_DECLARE(font_awesome_30_4);
 
-LcdDisplay::LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, DisplayFonts fonts, int width, int height)
+EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, DisplayFonts fonts, int width, int height)
     : panel_io_(panel_io), panel_(panel), fonts_(fonts) {
     width_ = width;
     height_ = height;
@@ -84,25 +84,25 @@ LcdDisplay::LcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_
     }
 }
 
-SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
-                           int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy,
-                           DisplayFonts fonts)
-    : LcdDisplay(panel_io, panel, fonts, width, height) {
+SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+    int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy,
+    DisplayFonts fonts)
+    : EpdDisplay(panel_io, panel, fonts, width, height) {
 
-    // draw white
-    std::vector<uint16_t> buffer(width_, 0xFFFF);
-    for (int y = 0; y < height_; y++) {
-        esp_lcd_panel_draw_bitmap(panel_, 0, y, width_, y + 1, buffer.data());
-    }
+    // // draw white
+    // std::vector<uint16_t> buffer(width_, 0xFFFF);
+    // for (int y = 0; y < height_; y++) {
+    //     esp_lcd_panel_draw_bitmap(panel_, 0, y, width_, y + 1, buffer.data());
+    // }
 
-    // Set the display to on
-    ESP_LOGI(TAG, "Turning display on");
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
+    // // Set the display to on
+    // ESP_LOGI(TAG, "Turning display on");
+    // ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
 
-#if CONFIG_SPIRAM
+    #if CONFIG_SPIRAM
     // lv image cache, currently only PNG is supported
     size_t psram_size_mb = esp_psram_get_size() / 1024 / 1024;
     if (psram_size_mb >= 8) {
@@ -112,14 +112,14 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
         lv_image_cache_resize(512 * 1024, true);
         ESP_LOGI(TAG, "Use 512KB of PSRAM for image cache");
     }
-#endif
+    #endif
 
     ESP_LOGI(TAG, "Initialize LVGL port");
     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    port_cfg.task_stack = 16*1024;
     port_cfg.task_priority = 1;
-#if CONFIG_SOC_CPU_CORES_NUM > 1
-    port_cfg.task_affinity = 1;
-#endif
+    port_cfg.timer_period_ms = 50;
+    port_cfg.task_affinity = 1; // NOTE: 
     lvgl_port_init(&port_cfg);
 
     ESP_LOGI(TAG, "Adding LCD display");
@@ -127,25 +127,24 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
         .io_handle = panel_io_,
         .panel_handle = panel_,
         .control_handle = nullptr,
-        .buffer_size = static_cast<uint32_t>(width_ * 20),
+        .buffer_size = static_cast<uint32_t>(width_ * height_),
         .double_buffer = false,
         .trans_size = 0,
         .hres = static_cast<uint32_t>(width_),
         .vres = static_cast<uint32_t>(height_),
         .monochrome = false,
         .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
+            .swap_xy  = false,
+            .mirror_x = false,
+            .mirror_y = false,
         },
-        .color_format = LV_COLOR_FORMAT_RGB565,
+        .color_format = LV_COLOR_FORMAT_L8, 
         .flags = {
-            .buff_dma = 1,
+            .buff_dma = 0,
             .buff_spiram = 0,
             .sw_rotate = 0,
-            .swap_bytes = 1,
-            .full_refresh = 0,
-            .direct_mode = 0,
+            .full_refresh = 1,
+            .direct_mode = 0,  
         },
     };
 
@@ -162,134 +161,7 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     SetupUI();
 }
 
-// RGB LCD实现
-RgbLcdDisplay::RgbLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
-                           int width, int height, int offset_x, int offset_y,
-                           bool mirror_x, bool mirror_y, bool swap_xy,
-                           DisplayFonts fonts)
-    : LcdDisplay(panel_io, panel, fonts, width, height) {
-
-    // draw white
-    std::vector<uint16_t> buffer(width_, 0xFFFF);
-    for (int y = 0; y < height_; y++) {
-        esp_lcd_panel_draw_bitmap(panel_, 0, y, width_, y + 1, buffer.data());
-    }
-
-    ESP_LOGI(TAG, "Initialize LVGL library");
-    lv_init();
-
-    ESP_LOGI(TAG, "Initialize LVGL port");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 1;
-#if CONFIG_SOC_CPU_CORES_NUM > 1
-    port_cfg.task_affinity = 1;
-#endif
-    lvgl_port_init(&port_cfg);
-
-    ESP_LOGI(TAG, "Adding LCD display");
-    const lvgl_port_display_cfg_t display_cfg = {
-        .io_handle = panel_io_,
-        .panel_handle = panel_,
-        .buffer_size = static_cast<uint32_t>(width_ * 20),
-        .double_buffer = true,
-        .hres = static_cast<uint32_t>(width_),
-        .vres = static_cast<uint32_t>(height_),
-        .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .flags = {
-            .buff_dma = 1,
-            .swap_bytes = 0,
-            .full_refresh = 1,
-            .direct_mode = 1,
-        },
-    };
-
-    const lvgl_port_display_rgb_cfg_t rgb_cfg = {
-        .flags = {
-            .bb_mode = true,
-            .avoid_tearing = true,
-        }
-    };
-    
-    display_ = lvgl_port_add_disp_rgb(&display_cfg, &rgb_cfg);
-    if (display_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to add RGB display");
-        return;
-    }
-    
-    if (offset_x != 0 || offset_y != 0) {
-        lv_display_set_offset(display_, offset_x, offset_y);
-    }
-
-    SetupUI();
-}
-
-MipiLcdDisplay::MipiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
-                            int width, int height,  int offset_x, int offset_y,
-                            bool mirror_x, bool mirror_y, bool swap_xy,
-                            DisplayFonts fonts)
-    : LcdDisplay(panel_io, panel, fonts, width, height) {
-
-    // Set the display to on
-    ESP_LOGI(TAG, "Turning display on");
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
-
-    ESP_LOGI(TAG, "Initialize LVGL library");
-    lv_init();
-
-    ESP_LOGI(TAG, "Initialize LVGL port");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 1;
-#if CONFIG_SOC_CPU_CORES_NUM > 1
-    port_cfg.task_affinity = 1;
-#endif
-    lvgl_port_init(&port_cfg);
-
-    ESP_LOGI(TAG, "Adding LCD display");
-    const lvgl_port_display_cfg_t disp_cfg = {
-            .io_handle = panel_io,
-            .panel_handle = panel,
-            .control_handle = nullptr,
-            .buffer_size = static_cast<uint32_t>(width_ * 50),
-            .double_buffer = false,
-            .hres = static_cast<uint32_t>(width_),
-            .vres = static_cast<uint32_t>(height_),
-            .monochrome = false,
-            /* Rotation values must be same as used in esp_lcd for initial settings of the screen */
-            .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .flags = {
-            .buff_dma = true,
-            .buff_spiram =false,
-            .sw_rotate = false,
-        },
-    };
-
-    const lvgl_port_display_dsi_cfg_t dpi_cfg = {
-        .flags = {
-            .avoid_tearing = false,
-        }
-    };
-    display_ = lvgl_port_add_disp_dsi(&disp_cfg, &dpi_cfg);
-    if (display_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to add display");
-        return;
-    }
-
-    if (offset_x != 0 || offset_y != 0) {
-        lv_display_set_offset(display_, offset_x, offset_y);
-    }
-
-    SetupUI();
-}
-
-LcdDisplay::~LcdDisplay() {
+EpdDisplay::~EpdDisplay() {
     // 然后再清理 LVGL 对象
     if (content_ != nullptr) {
         lv_obj_del(content_);
@@ -315,16 +187,16 @@ LcdDisplay::~LcdDisplay() {
     }
 }
 
-bool LcdDisplay::Lock(int timeout_ms) {
+bool EpdDisplay::Lock(int timeout_ms) {
     return lvgl_port_lock(timeout_ms);
 }
 
-void LcdDisplay::Unlock() {
+void EpdDisplay::Unlock() {
     lvgl_port_unlock();
 }
 
 #if CONFIG_USE_WECHAT_MESSAGE_STYLE
-void LcdDisplay::SetupUI() {
+void EpdDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
     auto screen = lv_screen_active();
@@ -438,7 +310,7 @@ void LcdDisplay::SetupUI() {
 #else
 #define  MAX_MESSAGES 20
 #endif
-void LcdDisplay::SetChatMessage(const char* role, const char* content) {
+void EpdDisplay::SetChatMessage(const char* role, const char* content) {
     DisplayLockGuard lock(this);
     if (content_ == nullptr) {
         return;
@@ -621,7 +493,7 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
     chat_message_label_ = msg_text;
 }
 
-void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
+void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     DisplayLockGuard lock(this);
     if (content_ == nullptr) {
         return;
@@ -723,7 +595,7 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     }
 }
 #else
-void LcdDisplay::SetupUI() {
+void EpdDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
     auto screen = lv_screen_active();
@@ -827,7 +699,7 @@ void LcdDisplay::SetupUI() {
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
 }
 
-void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
+void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     DisplayLockGuard lock(this);
     if (preview_image_ == nullptr) {
         return;
@@ -855,7 +727,7 @@ void LcdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
 }
 #endif
 
-void LcdDisplay::SetEmotion(const char* emotion) {
+void EpdDisplay::SetEmotion(const char* emotion) {
     struct Emotion {
         const char* icon;
         const char* text;
@@ -919,7 +791,7 @@ void LcdDisplay::SetEmotion(const char* emotion) {
 #endif
 }
 
-void LcdDisplay::SetIcon(const char* icon) {
+void EpdDisplay::SetIcon(const char* icon) {
     DisplayLockGuard lock(this);
     if (emotion_label_ == nullptr) {
         return;
@@ -936,7 +808,7 @@ void LcdDisplay::SetIcon(const char* icon) {
 #endif
 }
 
-void LcdDisplay::SetTheme(const std::string& theme_name) {
+void EpdDisplay::SetTheme(const std::string& theme_name) {
     DisplayLockGuard lock(this);
     
     if (theme_name == "dark" || theme_name == "DARK") {
