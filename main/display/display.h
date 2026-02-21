@@ -35,12 +35,25 @@ public:
     inline int width() const { return width_; }
     inline int height() const { return height_; }
 
+    
+    // 引导页面
+    // 主页面
+    lv_obj_t *scr_main_ = nullptr;
+    lv_obj_t *main_btn_chat_ = nullptr;       // 对话状态切换 
+    lv_obj_t *main_btn_chat_label_ = nullptr; // 
+    // 设置页面  
+    lv_obj_t *scr_setup_ = nullptr;
+    // 关机页面
+    // 休眠页面
+    // 
+
 protected:
     int width_ = 0;
     int height_ = 0;
     
     esp_pm_lock_handle_t pm_lock_ = nullptr;
     lv_display_t *display_ = nullptr;
+    lv_indev_t *indev_ = nullptr;
 
     lv_obj_t *emotion_label_ = nullptr;
     lv_obj_t *network_label_ = nullptr;
@@ -48,9 +61,9 @@ protected:
     lv_obj_t *notification_label_ = nullptr;
     lv_obj_t *mute_label_ = nullptr;
     lv_obj_t *battery_label_ = nullptr;
-    lv_obj_t* chat_message_label_ = nullptr;
-    lv_obj_t* low_battery_popup_ = nullptr;
-    lv_obj_t* low_battery_label_ = nullptr;
+    lv_obj_t *chat_message_label_ = nullptr;
+    lv_obj_t *low_battery_popup_ = nullptr;
+    lv_obj_t *low_battery_label_ = nullptr;
     
     const char* battery_icon_ = nullptr;
     const char* network_icon_ = nullptr;

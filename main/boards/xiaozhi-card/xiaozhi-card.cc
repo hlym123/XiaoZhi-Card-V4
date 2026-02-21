@@ -222,7 +222,7 @@ void XiaozhiCardBoard::InitializeDisplay()
     };
     esp_lcd_touch_new_i2c_ft5x06(tp_io_handle, &tp_cfg, &touch_);
    
-    display_ = new SpiEpdDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, 
+    display_ = new SpiEpdDisplay(panel_io_, panel_, touch_, DISPLAY_WIDTH, DISPLAY_HEIGHT, 
                               DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, 
                               DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY, 
                               {

@@ -11,6 +11,10 @@
 #include <esp_psram.h>
 #include <cstring>
 
+#include "device_state.h"
+#include "assets/lang_config.h"
+#include "application.h"
+
 #include "board.h"
 
 #define TAG "EpdDisplay"
@@ -67,8 +71,9 @@ const ThemeColors LIGHT_THEME = {
 
 LV_FONT_DECLARE(font_awesome_30_4);
 
-EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, DisplayFonts fonts, int width, int height)
-    : panel_io_(panel_io), panel_(panel), fonts_(fonts) {
+EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, 
+    esp_lcd_touch_handle_t touch, DisplayFonts fonts, int width, int height)
+    : panel_io_(panel_io), panel_(panel), touch_(touch), fonts_(fonts) {
     width_ = width;
     height_ = height;
 
@@ -85,9 +90,10 @@ EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_
 }
 
 SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+    esp_lcd_touch_handle_t touch,
     int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy,
     DisplayFonts fonts)
-    : EpdDisplay(panel_io, panel, fonts, width, height) {
+    : EpdDisplay(panel_io, panel, touch, fonts, width, height) {
 
     // // draw white
     // std::vector<uint16_t> buffer(width_, 0xFFFF);
@@ -157,6 +163,14 @@ SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     if (offset_x != 0 || offset_y != 0) {
         lv_display_set_offset(display_, offset_x, offset_y);
     }
+    
+    /* Add touch input */
+    ESP_LOGI(TAG, "Adding Touch Input");
+    const lvgl_port_touch_cfg_t touch_cfg = {
+        .disp = display_,
+        .handle = touch,
+    };
+    indev_ = lvgl_port_add_touch(&touch_cfg);
 
     SetupUI();
 }
@@ -194,6 +208,49 @@ bool EpdDisplay::Lock(int timeout_ms) {
 void EpdDisplay::Unlock() {
     lvgl_port_unlock();
 }
+
+/**
+ * 主页面事件回调
+ */
+static void scr_main_event_cb(lv_event_t * e) {
+    lv_event_code_t event = lv_event_get_code(e);
+
+    auto& board = Board::GetInstance();
+    auto display = board.GetDisplay();
+    auto& app = Application::GetInstance();
+
+    if (event == LV_EVENT_GESTURE) {
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_event_get_indev(e));
+        auto& app = Application::GetInstance();
+        if (dir == LV_DIR_BOTTOM) { // 下滑
+            ESP_LOGI("Gesture", "Swipe down detected");
+        } else if (dir == LV_DIR_LEFT) { // 左滑
+            ESP_LOGI("Gesture", "Swipe left detected"); 
+        } else if (dir == LV_DIR_RIGHT) { // 右滑
+            ESP_LOGI("Gesture", "Swipe right detected");
+        } else if (dir == LV_DIR_TOP) { // 上滑
+            ESP_LOGI("Gesture", "Swipe up detected");
+        }
+    } else if (event == LV_EVENT_CLICKED) {  
+        app.PlaySound(Lang::Sounds::OGG_SUCCESS);
+        lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);  
+        auto codec = Board::GetInstance().GetAudioCodec();
+        if (btn == display->main_btn_chat_) { // 对话，退出
+            app.ToggleChatState(); 
+            DeviceState state = app.GetDeviceState();
+            if (state == kDeviceStateSpeaking) {  
+                lv_label_set_text(display->main_btn_chat_label_, "退出");
+                ESP_LOGI(TAG, "Speaking");
+            } else if (state == kDeviceStateIdle) {
+                lv_label_set_text(display->main_btn_chat_label_, "对话");
+                ESP_LOGI(TAG, "Listening");
+            } else {
+                ESP_LOGI(TAG, "Other");
+            }
+        } 
+    }
+}
+
 
 #if CONFIG_USE_WECHAT_MESSAGE_STYLE
 void EpdDisplay::SetupUI() {
@@ -598,13 +655,23 @@ void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
 void EpdDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
-    auto screen = lv_screen_active();
-    lv_obj_set_style_text_font(screen, fonts_.text_font, 0);
-    lv_obj_set_style_text_color(screen, current_theme_.text, 0);
-    lv_obj_set_style_bg_color(screen, current_theme_.background, 0);
+    static lv_style_t style_btn;
+    lv_style_init(&style_btn);
+    lv_style_set_bg_opa(&style_btn, LV_OPA_TRANSP);     
+    lv_style_set_border_color(&style_btn, lv_color_black());
+    lv_style_set_border_width(&style_btn, 2);
+    lv_style_set_radius(&style_btn, 10);                
+    lv_style_set_pad_all(&style_btn, 10);   
+//================================================================
+// 主页面 UI
+//================================================================
+    scr_main_ = lv_screen_active();
+    lv_obj_set_style_text_font(scr_main_, fonts_.text_font, 0);
+    lv_obj_set_style_text_color(scr_main_, current_theme_.text, 0);
+    lv_obj_set_style_bg_color(scr_main_, current_theme_.background, 0);
 
     /* Container */
-    container_ = lv_obj_create(screen);
+    container_ = lv_obj_create(scr_main_);
     lv_obj_set_size(container_, LV_HOR_RES, LV_VER_RES);
     lv_obj_set_flex_flow(container_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(container_, 0, 0);
@@ -686,7 +753,7 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_text_font(battery_label_, fonts_.icon_font, 0);
     lv_obj_set_style_text_color(battery_label_, current_theme_.text, 0);
 
-    low_battery_popup_ = lv_obj_create(screen);
+    low_battery_popup_ = lv_obj_create(scr_main_);
     lv_obj_set_scrollbar_mode(low_battery_popup_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_size(low_battery_popup_, LV_HOR_RES * 0.9, fonts_.text_font->line_height * 2);
     lv_obj_align(low_battery_popup_, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -697,6 +764,26 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+    /* 添加切换对话状态按钮 */
+    main_btn_chat_ = lv_btn_create(scr_main_);  
+    lv_obj_remove_style_all(main_btn_chat_);  
+    lv_obj_align(main_btn_chat_, LV_ALIGN_TOP_MID, 0, 215);
+    lv_obj_set_size(main_btn_chat_, 108, 40);
+    lv_obj_remove_flag(main_btn_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_event_cb(main_btn_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL); 
+    lv_obj_add_style(main_btn_chat_, &style_btn, 0);
+    main_btn_chat_label_ = lv_label_create(main_btn_chat_);
+    lv_label_set_text(main_btn_chat_label_, "对话");
+    lv_obj_center(main_btn_chat_label_);
+    lv_obj_set_style_text_color(main_btn_chat_label_, lv_color_black(), 0);
+
+    /* 添加手势触发回调 */
+    lv_obj_add_event_cb(scr_main_, scr_main_event_cb, LV_EVENT_GESTURE, NULL);
+//================================================================
+//
+//================================================================
+    lv_screen_load(scr_main_); // 加载主页面
 }
 
 void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
