@@ -321,6 +321,7 @@ idf_component_register(SRCS ${SOURCES}
                         guage_bq27220
                         charger_aw32001
                         esp_epd_gdey027t91
+                        xiaozhi-fonts
                     PRIV_REQUIRES 
                         spi_flash 
                         efuse

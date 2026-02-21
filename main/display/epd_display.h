@@ -23,9 +23,19 @@ protected:
     lv_obj_t* side_bar_ = nullptr;
     lv_obj_t* preview_image_ = nullptr;
 
+    const lv_font_t *font_18_ = nullptr;
+    const lv_font_t *font_20_ = nullptr;
+    const lv_font_t *font_22_ = nullptr;
+    const lv_font_t *font_24_ = nullptr;
+    const lv_font_t *font_26_ = nullptr;
+    const lv_font_t *font_32_ = nullptr;
+    const lv_font_t *font_34_ = nullptr;
+    const lv_font_t *font_48_ = nullptr;
+
     DisplayFonts fonts_;
     ThemeColors current_theme_;
 
+    void GuidePageUI();
     void SetupUI();
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;

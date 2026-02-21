@@ -239,3 +239,14 @@ void Display::SetPowerSaveMode(bool on) {
         SetEmotion("neutral");
     }
 }
+
+// 全刷 
+void Display::FullRefresh() {
+    DisplayLockGuard lock(this);  
+    auto& board = Board::GetInstance();
+    board.ClearDisplay(0x00);
+    for (int i = 0; i < 5; i++) {
+        lv_obj_invalidate(lv_screen_active());   
+        lv_refr_now(NULL);
+    }
+}

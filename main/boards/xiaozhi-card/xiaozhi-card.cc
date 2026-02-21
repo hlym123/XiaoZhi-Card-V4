@@ -36,7 +36,7 @@
 
 static const char *TAG = "XiaoZhi-Card Board";
 
-LV_FONT_DECLARE(font_puhui_16_4);
+LV_FONT_DECLARE(font_puhui_16_1);
 LV_FONT_DECLARE(font_awesome_16_4);
 
 
@@ -106,6 +106,9 @@ private:
     void InitializeButtons();        // 按键
     void InitializeIndicator();      // 底座指示灯   
     void InitializeTools();          // 
+
+    // Display operations
+    void ClearDisplay(uint8_t color); 
 
     virtual Display *GetDisplay() override;
 
@@ -226,7 +229,7 @@ void XiaozhiCardBoard::InitializeDisplay()
                               DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, 
                               DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY, 
                               {
-                                  .text_font  = &font_puhui_16_4,
+                                  .text_font  = &font_puhui_16_1,
                                   .icon_font  = &font_awesome_16_4,
                                   .emoji_font = font_emoji_64_init(),
                               });
@@ -339,25 +342,25 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
     return true;
 }
 
-// void XiaozhiCardBoard::ClearDisplay(uint8_t color)
-// {
-    // static uint8_t *buf = nullptr;
-    // static size_t buf_size = 0;
-    // if (panel_ == nullptr) {
-    //     printf("ClearDisplay: panel_ is null!\n");
-    //     return;
-    // }
-    // buf_size = EPD_RES_WIDTH * EPD_RES_HEIGHT;
-    // if (buf == nullptr) {
-    //     buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    //     if (!buf) {
-    //         printf("ClearDisplay: failed to allocate %u bytes in SPIRAM!\n", (unsigned)buf_size);
-    //         return;
-    //     }
-    // }
-    // memset(buf, color, buf_size);
-    // panel_gdey027t91_draw_bitmap_full(panel_, 0, 0, EPD_RES_WIDTH, EPD_RES_HEIGHT, buf);
-// }
+void XiaozhiCardBoard::ClearDisplay(uint8_t color)
+{
+    static uint8_t *buf = nullptr;
+    static size_t buf_size = 0;
+    if (panel_ == nullptr) {
+        printf("ClearDisplay: panel_ is null!\n");
+        return;
+    }
+    buf_size = EPD_RES_WIDTH * EPD_RES_HEIGHT;
+    if (buf == nullptr) {
+        buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+        if (!buf) {
+            printf("ClearDisplay: failed to allocate %u bytes in SPIRAM!\n", (unsigned)buf_size);
+            return;
+        }
+    }
+    memset(buf, color, buf_size);
+    panel_gdey027t91_draw_bitmap_full(panel_, 0, 0, EPD_RES_WIDTH, EPD_RES_HEIGHT, buf);
+}
 
 AudioCodec *XiaozhiCardBoard::GetAudioCodec()
 {

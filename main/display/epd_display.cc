@@ -41,6 +41,28 @@
 #define LIGHT_BORDER_COLOR           lv_color_hex(0xE0E0E0)     // Light gray border
 #define LIGHT_LOW_BATTERY_COLOR      lv_color_black()           // Black for light mode
 
+// Add for XiaoZhi-Card Board.
+// assert image 
+LV_IMG_DECLARE(ui_img_minus_png);         
+LV_IMG_DECLARE(ui_img_plus_png);     
+LV_IMG_DECLARE(ui_img_sleep_png);         
+LV_IMG_DECLARE(ui_img_shutdown_png);    
+LV_IMG_DECLARE(ui_img_eye_png);      
+LV_IMG_DECLARE(ui_img_tip_png);    
+LV_IMG_DECLARE(ui_img_psleep_png);  
+LV_IMG_DECLARE(ui_img_line_png); 
+LV_IMG_DECLARE(ui_img_assistant_png);  
+LV_IMG_DECLARE(ui_img_page2_png);  
+LV_IMG_DECLARE(ui_img_arrow_png);  
+LV_IMG_DECLARE(ui_img_mbox_png);  
+LV_IMG_DECLARE(ui_img_box_png);  
+// font
+LV_FONT_DECLARE(font_wly_18);
+LV_FONT_DECLARE(font_wly_22);
+LV_FONT_DECLARE(font_wly_26);
+LV_FONT_DECLARE(font_sfy_34);
+LV_FONT_DECLARE(font_simple_48);
+
 
 // Define dark theme colors
 const ThemeColors DARK_THEME = {
@@ -172,6 +194,7 @@ SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     };
     indev_ = lvgl_port_add_touch(&touch_cfg);
 
+    GuidePageUI();
     SetupUI();
 }
 
@@ -210,6 +233,58 @@ void EpdDisplay::Unlock() {
 }
 
 /**
+ * 引导页面
+ */
+void scr_guide_event_cb(lv_event_t * e) {
+    lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);  
+
+    auto& board = Board::GetInstance();
+    auto display = board.GetDisplay();
+    auto& app = Application::GetInstance();
+   
+    app.PlaySound(Lang::Sounds::OGG_SUCCESS);
+  
+    if (btn == display->btn_startup_intro_) {
+        lv_screen_load(display->scr_page1_);
+    } else if (btn == display->btn_startup_return_) {
+        lv_screen_load(display->scr_main_);
+        auto async_del = [](void * obj) {
+            lv_obj_delete(static_cast<lv_obj_t*>(obj));
+        };
+        lv_async_call(async_del, display->scr_startup_);
+        lv_async_call(async_del, display->scr_page1_);
+        lv_async_call(async_del, display->scr_page2_);
+        lv_async_call(async_del, display->scr_page3_);
+        lv_async_call(async_del, display->scr_page4_);
+        lv_async_call(async_del, display->scr_page5_);
+        display->FullRefresh();
+        // if (display->on_click_dont_reming_) { // 不再提示  
+        //     display->on_click_dont_reming_();
+        // }
+    } else if (btn == display->btn_page1_next_) {
+        lv_screen_load(display->scr_page2_);
+    } else if (btn == display->btn_page2_next_) {
+        lv_screen_load(display->scr_page3_);
+    } else if (btn == display->btn_page3_next_) {
+        lv_screen_load(display->scr_page4_);
+    } else if (btn == display->btn_page4_next_) {
+        lv_screen_load(display->scr_page5_);
+    } else if (btn == display->btn_page5_next_) {
+        lv_screen_load(display->scr_main_);
+        auto async_del = [](void * obj) {
+            lv_obj_delete(static_cast<lv_obj_t*>(obj));
+        };
+        lv_async_call(async_del, display->scr_startup_);
+        lv_async_call(async_del, display->scr_page1_);
+        lv_async_call(async_del, display->scr_page2_);
+        lv_async_call(async_del, display->scr_page3_);
+        lv_async_call(async_del, display->scr_page4_);
+        lv_async_call(async_del, display->scr_page5_);
+        display->FullRefresh();
+    } 
+}
+
+/**
  * 主页面事件回调
  */
 static void scr_main_event_cb(lv_event_t * e) {
@@ -223,11 +298,14 @@ static void scr_main_event_cb(lv_event_t * e) {
         lv_dir_t dir = lv_indev_get_gesture_dir(lv_event_get_indev(e));
         auto& app = Application::GetInstance();
         if (dir == LV_DIR_BOTTOM) { // 下滑
-            ESP_LOGI("Gesture", "Swipe down detected");
+            ESP_LOGI("Gesture", "Swipe down detected, load setup page");
+            lv_screen_load(display->scr_setup_);
         } else if (dir == LV_DIR_LEFT) { // 左滑
             ESP_LOGI("Gesture", "Swipe left detected"); 
+            display->FullRefresh();
         } else if (dir == LV_DIR_RIGHT) { // 右滑
             ESP_LOGI("Gesture", "Swipe right detected");
+            display->FullRefresh();
         } else if (dir == LV_DIR_TOP) { // 上滑
             ESP_LOGI("Gesture", "Swipe up detected");
         }
@@ -251,6 +329,378 @@ static void scr_main_event_cb(lv_event_t * e) {
     }
 }
 
+/** 
+ * 设置页面事件回调
+ */
+static void scr_setup_event_cb(lv_event_t * e) {
+    auto& app = Application::GetInstance();
+    //app.Schedule([&app]() {
+        app.PlaySound(Lang::Sounds::OGG_SUCCESS);
+    //});
+    
+    lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);  
+    Board& board = Board::GetInstance();
+    auto display = board.GetDisplay(); 
+    auto codec = board.GetAudioCodec();
+    if (btn == display->setup_btn_clear_net_) { // 重置 Wi-Fi
+        lv_obj_add_flag(display->setup_btn_clear_net_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(display->setup_btn_cn_confirm_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(display->setup_btn_cn_cancel_, LV_OBJ_FLAG_HIDDEN);
+    } else if (btn == display->setup_btn_sw_net_) { // 切换网络 
+        lv_obj_add_flag(display->setup_btn_sw_net_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(display->setup_btn_confirm_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(display->setup_btn_cancel_, LV_OBJ_FLAG_HIDDEN);
+    } else if (btn == display->setup_btn_minus_) { // 减小音量
+        int vol = codec->output_volume();
+        if (vol > 10) { vol -= 10; } else { vol = 0; }
+        codec->SetOutputVolume(vol);
+        lv_label_set_text_fmt(display->label_volume_, "%d", vol);
+    } else if (btn == display->setup_btn_plus_) { // 增大音量 
+        int vol = codec->output_volume();
+        if (vol <= 90) { vol += 10;} else { vol = 100; }
+        codec->SetOutputVolume(vol);
+        lv_label_set_text_fmt(display->label_volume_, "%d", vol);
+    } else if (btn == display->setup_btn_sleep_) { // 休眠 
+        // if (display->on_manual_sleep_) {
+        //     display->on_manual_sleep_();
+        // }
+    } else if (btn == display->setup_btn_shutdown_) { // 关机 
+        // if (display->on_shutdown_) {
+        //     display->on_shutdown_();
+        // }
+    } else if (btn == display->setup_btn_return_) { // 返回主页面  
+        if (display->setup_btn_clear_net_) {
+            if (lv_obj_has_flag(display->setup_btn_clear_net_, LV_OBJ_FLAG_HIDDEN)) {
+                lv_obj_clear_flag(display->setup_btn_clear_net_, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(display->setup_btn_cn_confirm_, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(display->setup_btn_cn_cancel_, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        if (lv_obj_has_flag(display->setup_btn_sw_net_, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_clear_flag(display->setup_btn_sw_net_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(display->setup_btn_confirm_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(display->setup_btn_cancel_, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_screen_load(display->scr_main_);
+        display->FullRefresh();
+    } else if (btn == display->setup_btn_auto_sleep_) { // 自动休眠开/关 
+        // if (display->on_auto_sleep_changed_) {
+        //     display->on_auto_sleep_changed_();
+        // }
+    } 
+} 
+
+/**
+ * 开机引导页 
+ */
+void EpdDisplay::GuidePageUI()
+{
+    DisplayLockGuard lock(this);
+
+    lv_obj_t *label = nullptr;
+    lv_obj_t *img = nullptr;
+
+    font_18_ = &font_wly_18; // lv_binfont_create("P:/sdcard/wly_18.bin");
+    ESP_LOGI(TAG, "%s", font_18_ ? "wly_18 loaded" : "load wly_18 failed!");
+
+    font_22_ = &font_wly_22; // lv_binfont_create("P:/sdcard/wly_22.bin");
+    ESP_LOGI(TAG, "%s", font_22_ ? "wly_22 loaded" : "load wly_22 failed!");
+
+    font_26_ = &font_wly_26; // lv_binfont_create("P:/sdcard/wly_26.bin");
+    ESP_LOGI(TAG, "%s", font_26_ ? "wly_26 loaded" : "load wly_26 failed!");
+
+    font_34_ = &font_sfy_34; // lv_binfont_create("P:/sdcard/jfy_34.bin");
+    ESP_LOGI(TAG, "%s", font_34_ ? "jfy_34 loaded" : "load jfy_34 failed!");
+
+    font_48_ = &font_simple_48; //lv_binfont_create("P:/sdcard/simple_48.bin");
+    ESP_LOGI(TAG, "%s", font_48_ ? "simple_48 loaded" : "load simple_48 failed!");
+
+    static lv_style_t style_btn;
+    lv_style_init(&style_btn);
+    lv_style_set_bg_opa(&style_btn, LV_OPA_TRANSP);     
+    lv_style_set_border_color(&style_btn, lv_color_black());
+    lv_style_set_border_width(&style_btn, 2);
+    lv_style_set_radius(&style_btn, 10);                
+    lv_style_set_pad_all(&style_btn, 10);   
+    
+    static lv_style_t style_label;
+    lv_style_init(&style_label);
+    lv_style_set_text_line_space(&style_label, 5);
+ 
+//================================================================
+// 开机引导页 
+//================================================================
+    scr_startup_ = lv_obj_create(NULL);
+
+    lv_obj_t *img_eye_l = lv_img_create(scr_startup_);
+    lv_img_set_src(img_eye_l, &ui_img_eye_png);
+    lv_obj_set_size(img_eye_l, 13, 21); 
+    lv_obj_align(img_eye_l, LV_ALIGN_TOP_MID, -13, 26); 
+
+    lv_obj_t *img_eye_r = lv_img_create(scr_startup_);
+    lv_img_set_src(img_eye_r, &ui_img_eye_png);
+    lv_obj_set_size(img_eye_r, 13, 21); 
+    lv_obj_align(img_eye_r, LV_ALIGN_TOP_MID, 13, 26); 
+
+    label = lv_label_create(scr_startup_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 68); 
+    lv_label_set_text(label, "欢迎使用");
+
+    label = lv_label_create(scr_startup_);
+    lv_obj_set_style_text_font(label, font_34_, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 105); 
+    lv_label_set_text(label, "小智墨伴");
+
+    btn_startup_intro_ = lv_button_create(scr_startup_);
+    lv_obj_set_size(btn_startup_intro_, 108, 40);
+    lv_obj_align(btn_startup_intro_, LV_ALIGN_BOTTOM_MID, 0, -70);
+    lv_obj_clear_flag(btn_startup_intro_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);; 
+    lv_obj_add_style(btn_startup_intro_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_startup_intro_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_startup_intro_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "进入向导");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+
+    btn_startup_return_ = lv_button_create(scr_startup_);
+    lv_obj_set_size(btn_startup_return_, 108, 40);
+    lv_obj_align(btn_startup_return_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_startup_return_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_startup_return_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_startup_return_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_startup_return_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "不再提示");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+
+//================================================================
+    scr_page1_ = lv_obj_create(NULL); 
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "信号");
+    lv_obj_set_pos(label, 2, 25);
+    label = lv_label_create(scr_page1_);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 4, 4);
+    lv_obj_set_style_text_font(label, fonts_.icon_font, 0);
+    lv_obj_set_style_text_color(label, current_theme_.text, 0);
+    lv_label_set_text(label, FONT_AWESOME_SIGNAL_STRONG);
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 4);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "12:34");
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "-------------------------");
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "电量");
+    lv_obj_set_pos(label, 140, 25);
+    
+    label = lv_label_create(scr_page1_);
+    lv_obj_align(label, LV_ALIGN_TOP_RIGHT, -10, 4);
+    lv_obj_set_style_text_font(label, fonts_.icon_font, 0);
+    lv_obj_set_style_text_color(label, current_theme_.text, 0);
+    lv_label_set_text(label, FONT_AWESOME_BATTERY_FULL);
+
+    img = lv_img_create(scr_page1_);
+    lv_img_set_src(img, &ui_img_line_png);
+    lv_obj_set_size(img, 36, 90); 
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 30); 
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "状态栏");
+    lv_obj_set_pos(label, 100, 108);
+
+    label = lv_label_create(scr_page1_);
+    lv_obj_set_style_text_font(label, font_48_, 0);
+    lv_label_set_text(label, "1");
+    lv_obj_set_pos(label, 130, 138);
+
+    btn_page1_next_ = lv_button_create(scr_page1_);
+    lv_obj_set_size(btn_page1_next_, 108, 40);
+    lv_obj_align(btn_page1_next_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_page1_next_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_page1_next_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_page1_next_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_page1_next_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "下一页");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+        
+//================================================================
+    scr_page2_ = lv_obj_create(NULL); 
+
+    img = lv_img_create(scr_page2_);
+    lv_img_set_src(img, &ui_img_page2_png);
+    lv_obj_set_size(img, 176, 114); 
+    lv_obj_set_pos(img, 0, 0);
+
+    label = lv_label_create(scr_page2_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "系统设置");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 28);
+
+    label = lv_label_create(scr_page2_);
+    lv_obj_set_style_text_font(label, font_48_, 0);
+    lv_label_set_text(label, "2");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 65);
+
+    img = lv_img_create(scr_page2_);
+    lv_img_set_src(img, &ui_img_arrow_png);
+    lv_obj_set_size(img, 90, 49); 
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 118);
+        
+    label = lv_label_create(img);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "下滑");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 5);
+
+    btn_page2_next_ = lv_button_create(scr_page2_);
+    lv_obj_set_size(btn_page2_next_, 108, 40);
+    lv_obj_align(btn_page2_next_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_page2_next_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_page2_next_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_page2_next_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_page2_next_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "下一页");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+
+//================================================================
+    scr_page3_ = lv_obj_create(NULL); 
+
+    lv_obj_t *img_mbox = lv_img_create(scr_page3_);
+    lv_img_set_src(img_mbox, &ui_img_mbox_png);
+    lv_obj_set_size(img_mbox, 156, 59); 
+    lv_obj_set_pos(img_mbox, 10, 12);
+
+    label = lv_label_create(scr_page3_);
+    lv_obj_set_style_text_font(label, font_26_, 0);
+    lv_label_set_text(label, "\“你好小智\”");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 22);
+
+    label = lv_label_create(scr_page3_);
+    lv_obj_set_style_text_font(label, font_18_, 0);
+    lv_label_set_text(label, "请对我说");
+    lv_obj_set_pos(label, 10, 75);
+
+    label = lv_label_create(scr_page3_);
+    lv_obj_set_style_text_font(label, font_18_, 0);
+    lv_label_set_text(label, "或点击");
+    lv_obj_set_pos(label, 99, 98);
+    
+    img = lv_img_create(scr_page3_);
+    lv_img_set_src(img, &ui_img_box_png);
+    lv_obj_set_size(img, 68, 38); 
+    lv_obj_set_pos(img, 95, 119);
+    label = lv_label_create(img);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "唤醒");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, -2);
+
+    label = lv_label_create(scr_page3_);
+    lv_obj_set_style_text_font(label, font_48_, 0);
+    lv_label_set_text(label, "3");
+    lv_obj_set_pos(label, 20, 107);
+
+    label = lv_label_create(scr_page3_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "即可唤醒我！");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 5, 175);
+
+    btn_page3_next_ = lv_button_create(scr_page3_);
+    lv_obj_set_size(btn_page3_next_, 108, 40);
+    lv_obj_align(btn_page3_next_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_page3_next_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_page3_next_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_page3_next_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_page3_next_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "下一页");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+
+//================================================================
+    scr_page4_ = lv_obj_create(NULL); 
+    
+    img = lv_img_create(scr_page4_);
+    lv_img_set_src(img, &ui_img_tip_png);
+    lv_obj_set_size(img, 28, 28); 
+    lv_obj_set_pos(img, 8, 27);
+
+    label = lv_label_create(scr_page4_);
+    lv_obj_set_style_text_font(label, font_22_, 0); 
+    lv_obj_set_pos(label, 40, 29);
+    lv_label_set_text(label, "提醒");
+
+    label = lv_label_create(scr_page4_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0); 
+    lv_obj_add_style(label, &style_label, 0);      
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 73);
+    lv_label_set_text(label, "如果一段时间\n不使用我\n我会自动\n进入休眠哦");
+
+    btn_page4_next_ = lv_button_create(scr_page4_);
+    lv_obj_set_size(btn_page4_next_, 108, 40);
+    lv_obj_align(btn_page4_next_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_page4_next_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_page4_next_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_page4_next_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_page4_next_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "知道了");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);
+        
+//================================================================
+    scr_page5_ = lv_obj_create(NULL); 
+
+    lv_obj_t *img_eye = lv_img_create(scr_page5_);
+    lv_img_set_src(img_eye, &ui_img_eye_png);
+    lv_obj_align(img_eye, LV_ALIGN_TOP_MID, -13, 45); 
+
+    img_eye = lv_img_create(scr_page5_);
+    lv_img_set_src(img_eye, &ui_img_eye_png);
+    lv_obj_align(img_eye, LV_ALIGN_TOP_MID, 13, 45); 
+
+    label = lv_label_create(scr_page5_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0); 
+    lv_obj_add_style(label, &style_label, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 105);
+    lv_obj_set_size(label, 100, 30);
+    lv_label_set_text(label, "马上体验");
+    label = lv_label_create(scr_page5_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0); 
+    lv_obj_add_style(label, &style_label, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 6, 132);
+    lv_label_set_text(label, "奇妙旅程吧！");
+
+    btn_page5_next_ = lv_button_create(scr_page5_);
+    lv_obj_set_size(btn_page5_next_, 108, 40);
+    lv_obj_align(btn_page5_next_, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_clear_flag(btn_page5_next_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
+    lv_obj_add_style(btn_page5_next_, &style_btn, 0);
+    lv_obj_add_event_cb(btn_page5_next_, scr_guide_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(btn_page5_next_);
+    lv_obj_set_style_text_font(label, font_22_, 0);
+    lv_label_set_text(label, "开始");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);  
+}
 
 #if CONFIG_USE_WECHAT_MESSAGE_STYLE
 void EpdDisplay::SetupUI() {
@@ -655,17 +1105,21 @@ void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
 void EpdDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
+    lv_obj_t *label = nullptr;
+
     static lv_style_t style_btn;
     lv_style_init(&style_btn);
     lv_style_set_bg_opa(&style_btn, LV_OPA_TRANSP);     
     lv_style_set_border_color(&style_btn, lv_color_black());
     lv_style_set_border_width(&style_btn, 2);
     lv_style_set_radius(&style_btn, 10);                
-    lv_style_set_pad_all(&style_btn, 10);   
+    lv_style_set_pad_all(&style_btn, 10);
+
 //================================================================
 // 主页面 UI
 //================================================================
-    scr_main_ = lv_screen_active();
+    // scr_main_ = lv_screen_active();
+    scr_main_ = lv_obj_create(NULL);
     lv_obj_set_style_text_font(scr_main_, fonts_.text_font, 0);
     lv_obj_set_style_text_color(scr_main_, current_theme_.text, 0);
     lv_obj_set_style_bg_color(scr_main_, current_theme_.background, 0);
@@ -780,10 +1234,222 @@ void EpdDisplay::SetupUI() {
 
     /* 添加手势触发回调 */
     lv_obj_add_event_cb(scr_main_, scr_main_event_cb, LV_EVENT_GESTURE, NULL);
+
+//================================================================
+// 设置页面  
+//================================================================
+    scr_setup_ = lv_obj_create(NULL); 
+
+    setup_btn_clear_net_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_clear_net_);
+    lv_obj_set_size(setup_btn_clear_net_, 160, 30);
+    lv_obj_align(setup_btn_clear_net_, LV_ALIGN_TOP_MID, 0, 1);
+    lv_obj_add_event_cb(setup_btn_clear_net_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_clear_net_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "重新配置 Wi-Fi");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);  
+    lv_obj_add_flag(setup_btn_clear_net_, LV_OBJ_FLAG_HIDDEN); 
+
+    setup_btn_cn_confirm_ = lv_button_create(scr_setup_); // 清除网络配置 
+    lv_obj_remove_style_all(setup_btn_cn_confirm_);
+    lv_obj_set_size(setup_btn_cn_confirm_, 72, 34);
+    lv_obj_align(setup_btn_cn_confirm_, LV_ALIGN_TOP_MID, -44, 1); 
+    lv_obj_add_event_cb(setup_btn_cn_confirm_, [](lv_event_t* e) {
+        ESP_LOGI("Setup", "确认清除网络配置");
+        // Board& board = Board::GetInstance();
+        // auto display = board.GetDisplay();
+        // auto& app = Application::GetInstance();
+        // app.Schedule([&app]() {
+        //     app.PlaySound(Lang::Sounds::P3_CLICK);
+        // });
+        // if (display->on_clear_network_) {
+        //     display->on_clear_network_();
+        // }
+    }, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_cn_confirm_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "确认");
+    lv_obj_center(label);
+    lv_obj_add_flag(setup_btn_cn_confirm_, LV_OBJ_FLAG_HIDDEN); 
+
+    setup_btn_cn_cancel_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_cn_cancel_);
+    lv_obj_set_size(setup_btn_cn_cancel_, 72, 34);
+    lv_obj_align(setup_btn_cn_cancel_, LV_ALIGN_TOP_MID, 44, 1);
+    lv_obj_add_event_cb(setup_btn_cn_cancel_, [](lv_event_t* e) {
+        ESP_LOGI("Setup", "取消清除网络配置");
+        // Board& board = Board::GetInstance();
+        // auto display = board.GetDisplay();
+        // auto& app = Application::GetInstance();
+        // app.Schedule([&app]() {
+        //     app.PlaySound(Lang::Sounds::P3_CLICK);
+        // });
+        // lv_obj_clear_flag(display->setup_btn_clear_net_, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_add_flag(display->setup_btn_cn_confirm_, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_add_flag(display->setup_btn_cn_cancel_, LV_OBJ_FLAG_HIDDEN);
+    }, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_cn_cancel_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "取消");
+    lv_obj_center(label);
+    lv_obj_add_flag(setup_btn_cn_cancel_, LV_OBJ_FLAG_HIDDEN); 
+
+    setup_btn_sw_net_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_sw_net_);
+    lv_obj_set_size(setup_btn_sw_net_, 160, 34);
+    lv_obj_align(setup_btn_sw_net_, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_add_event_cb(setup_btn_sw_net_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    setup_label_net_ = lv_label_create(setup_btn_sw_net_);
+    lv_obj_set_style_text_font(setup_label_net_, fonts_.text_font, 0);
+    lv_label_set_text(setup_label_net_, "");
+    lv_obj_set_style_text_color(setup_label_net_, lv_color_black(), 0);
+    lv_obj_center(setup_label_net_);  
+
+    setup_btn_confirm_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_confirm_);
+    lv_obj_set_size(setup_btn_confirm_, 72, 34);
+    lv_obj_align(setup_btn_confirm_, LV_ALIGN_TOP_MID, -44, 30); 
+    lv_obj_add_event_cb(setup_btn_confirm_, [](lv_event_t* e) {
+        ESP_LOGI("Setup", "确认切换网络");
+        // Board& board = Board::GetInstance();
+        // auto display = board.GetDisplay();
+        // auto& app = Application::GetInstance();
+        // app.Schedule([&app]() {
+        //     app.PlaySound(Lang::Sounds::P3_CLICK);
+        // });
+        // if (display->on_switch_network_) {
+        //     display->on_switch_network_();
+        // }
+    }, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_confirm_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "确认");
+    lv_obj_center(label);
+    lv_obj_add_flag(setup_btn_confirm_, LV_OBJ_FLAG_HIDDEN); 
+
+    setup_btn_cancel_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_cancel_);
+    lv_obj_set_size(setup_btn_cancel_, 72, 34);
+    lv_obj_align(setup_btn_cancel_, LV_ALIGN_TOP_MID, 44, 30);
+    lv_obj_add_event_cb(setup_btn_cancel_, [](lv_event_t* e) {
+        ESP_LOGI("Setup", "取消切换网络");
+        // auto& app = Application::GetInstance();
+        // app.Schedule([&app]() {
+        //     app.PlaySound(Lang::Sounds::P3_CLICK);
+        // });
+        // Board& board = Board::GetInstance();
+        // auto display = board.GetDisplay();
+        // lv_obj_clear_flag(display->setup_btn_sw_net_, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_add_flag(display->setup_btn_confirm_, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_add_flag(display->setup_btn_cancel_, LV_OBJ_FLAG_HIDDEN);
+    }, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_cancel_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "取消");
+    lv_obj_center(label);
+    lv_obj_add_flag(setup_btn_cancel_, LV_OBJ_FLAG_HIDDEN); 
+
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 22);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "------------------------");
+
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 54);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "------------------------");
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 68);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "音量");
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 102);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "------------------------");
+
+    label_volume_ = lv_label_create(scr_setup_);
+    lv_obj_align(label_volume_, LV_ALIGN_TOP_MID, 0, 87);
+    lv_obj_set_style_text_font(label_volume_, fonts_.text_font, 0);
+    lv_label_set_text(label_volume_, "");
+
+    setup_btn_minus_ = lv_imagebutton_create(scr_setup_);
+    lv_imagebutton_set_src(setup_btn_minus_, LV_IMAGEBUTTON_STATE_RELEASED, NULL, &ui_img_minus_png, NULL);
+    lv_obj_set_size(setup_btn_minus_, 46, 46);
+    lv_obj_align(setup_btn_minus_, LV_ALIGN_TOP_MID, -55, 66);
+    lv_obj_add_event_cb(setup_btn_minus_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+
+    setup_btn_plus_ = lv_imagebutton_create(scr_setup_);
+    lv_imagebutton_set_src(setup_btn_plus_, LV_IMAGEBUTTON_STATE_RELEASED, NULL, &ui_img_plus_png, NULL);
+    lv_obj_set_size(setup_btn_plus_, 46, 46);
+    lv_obj_align(setup_btn_plus_, LV_ALIGN_TOP_MID, 55, 66);
+    lv_obj_add_event_cb(setup_btn_plus_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+
+    setup_btn_auto_sleep_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_auto_sleep_);
+    lv_obj_set_size(setup_btn_auto_sleep_, 160, 32);
+    lv_obj_align(setup_btn_auto_sleep_, LV_ALIGN_TOP_MID, 0, 111);
+    lv_obj_add_event_cb(setup_btn_auto_sleep_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    setup_label_auto_sleep_ = lv_label_create(setup_btn_auto_sleep_);
+    lv_obj_set_style_text_font(setup_label_auto_sleep_, fonts_.text_font, 0);
+    lv_label_set_text(setup_label_auto_sleep_, "关闭自动休眠");
+    lv_obj_set_style_text_color(setup_label_auto_sleep_, lv_color_black(), 0);
+    lv_obj_center(setup_label_auto_sleep_);  
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 135);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "------------------------");
+
+    setup_btn_sleep_ = lv_imagebutton_create(scr_setup_);
+    lv_imagebutton_set_src(setup_btn_sleep_, LV_IMAGEBUTTON_STATE_RELEASED, NULL, &ui_img_sleep_png, NULL);
+    lv_obj_set_size(setup_btn_sleep_, 40, 40);
+    lv_obj_align(setup_btn_sleep_, LV_ALIGN_TOP_MID, -50, 156);
+    lv_obj_add_event_cb(setup_btn_sleep_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, -50, 198);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "休眠");
+
+    setup_btn_shutdown_ = lv_imagebutton_create(scr_setup_);
+    lv_imagebutton_set_src(setup_btn_shutdown_, LV_IMAGEBUTTON_STATE_RELEASED, NULL, &ui_img_shutdown_png, NULL);
+    lv_obj_set_size(setup_btn_shutdown_, 40, 40);
+    lv_obj_align(setup_btn_shutdown_, LV_ALIGN_TOP_MID, 50, 156);
+    lv_obj_add_event_cb(setup_btn_shutdown_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 50, 198);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "关机");
+        
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -28);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "------------------------");
+    setup_btn_return_ = lv_button_create(scr_setup_);
+    lv_obj_remove_style_all(setup_btn_return_);
+    lv_obj_set_size(setup_btn_return_, 108, 40);
+    lv_obj_align(setup_btn_return_, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_event_cb(setup_btn_return_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
+    label = lv_label_create(setup_btn_return_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "> 返回 <");
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_center(label);  
+
+    label = lv_label_create(scr_setup_);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 168);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "电量");
+    setup_label_battery_ = lv_label_create(scr_setup_);
+    lv_obj_align(setup_label_battery_, LV_ALIGN_TOP_MID, 0, 188);
+    lv_obj_set_style_text_font(setup_label_battery_, fonts_.text_font, 0);
+    lv_label_set_text(setup_label_battery_, "");
+
 //================================================================
 //
 //================================================================
-    lv_screen_load(scr_main_); // 加载主页面
+    // lv_screen_load(scr_main_); // 加载主页面
+    lv_screen_load(scr_startup_);
 }
 
 void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
@@ -896,6 +1562,8 @@ void EpdDisplay::SetIcon(const char* icon) {
 }
 
 void EpdDisplay::SetTheme(const std::string& theme_name) {
+    return; // For XiaoZhi-Card Board, disable dark mode.
+
     DisplayLockGuard lock(this);
     
     if (theme_name == "dark" || theme_name == "DARK") {

@@ -35,14 +35,45 @@ public:
     inline int width() const { return width_; }
     inline int height() const { return height_; }
 
-    
-    // 引导页面
+    // Add for XiaoZhi-Card Board
+    void FullRefresh();
+
+    // 引导页面 
+    lv_obj_t *scr_startup_ = nullptr;
+    lv_obj_t *btn_startup_intro_ = nullptr;
+    lv_obj_t *btn_startup_return_ = nullptr;
+    lv_obj_t *scr_page1_ = nullptr;
+    lv_obj_t *btn_page1_next_ = nullptr;
+    lv_obj_t *scr_page2_ = nullptr;
+    lv_obj_t *btn_page2_next_ = nullptr;
+    lv_obj_t *scr_page3_ = nullptr;
+    lv_obj_t *btn_page3_next_ = nullptr;
+    lv_obj_t *scr_page4_ = nullptr;
+    lv_obj_t *btn_page4_next_ = nullptr;
+    lv_obj_t *scr_page5_ = nullptr;
+    lv_obj_t *btn_page5_next_ = nullptr;
     // 主页面
     lv_obj_t *scr_main_ = nullptr;
     lv_obj_t *main_btn_chat_ = nullptr;       // 对话状态切换 
     lv_obj_t *main_btn_chat_label_ = nullptr; // 
     // 设置页面  
     lv_obj_t *scr_setup_ = nullptr;
+    lv_obj_t *label_volume_ = nullptr;
+    lv_obj_t *setup_btn_plus_ = nullptr;
+    lv_obj_t *setup_btn_minus_ = nullptr;
+    lv_obj_t *setup_btn_sleep_ = nullptr;
+    lv_obj_t *setup_btn_shutdown_ = nullptr;
+    lv_obj_t *setup_btn_return_ = nullptr;
+    lv_obj_t *setup_label_battery_ = nullptr;
+    lv_obj_t *setup_btn_auto_sleep_ = nullptr;
+    lv_obj_t *setup_label_auto_sleep_ = nullptr;
+    lv_obj_t *setup_btn_clear_net_ = nullptr;
+    lv_obj_t *setup_btn_cn_confirm_ = nullptr;
+    lv_obj_t *setup_btn_cn_cancel_ = nullptr;
+    lv_obj_t *setup_btn_sw_net_ = nullptr;
+    lv_obj_t *setup_btn_confirm_ = nullptr;
+    lv_obj_t *setup_btn_cancel_ = nullptr;
+    lv_obj_t *setup_label_net_ = nullptr;
     // 关机页面
     // 休眠页面
     // 

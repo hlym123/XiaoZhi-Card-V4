@@ -160,3 +160,15 @@ std::string Board::GetJson() {
     json += R"(})";
     return json;
 }
+
+// Add for XiaoZhi-Card Board
+
+void Board::ClearDisplay(uint8_t color)
+{
+ 
+}
+
+void Board::SetIndicator(uint8_t r, uint8_t g, uint8_t b)
+{
+ 
+}
