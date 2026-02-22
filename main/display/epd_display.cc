@@ -351,23 +351,64 @@ static void scr_main_event_cb(lv_event_t * e) {
         } else if (dir == LV_DIR_TOP) { // 上滑
             ESP_LOGI("Gesture", "Swipe up detected");
         }
-    } else if (event == LV_EVENT_CLICKED) {  
+    } else if (event == LV_EVENT_CLICKED) {
         app.PlaySound(Lang::Sounds::OGG_CLICK);
-        lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);  
+        lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);
         auto codec = Board::GetInstance().GetAudioCodec();
-        if (btn == display->main_btn_chat_) { // 对话，退出
-            app.ToggleChatState(); 
+        static bool pause = false;
+        if (btn == display->main_btn_chat_) { // 对话 / 退出 / 暂停 / 继续
             DeviceState state = app.GetDeviceState();
-            if (state == kDeviceStateSpeaking) {  
-                lv_label_set_text(display->main_btn_chat_label_, "退出");
-                ESP_LOGI(TAG, "Speaking");
-            } else if (state == kDeviceStateIdle) {
-                lv_label_set_text(display->main_btn_chat_label_, "对话");
-                ESP_LOGI(TAG, "Listening");
+            ESP_LOGI(TAG, "Main btn chat clicked, state=%s", state == kDeviceStateIdle ? "Idle" : state == kDeviceStateListening ? "Listening" : state == kDeviceStateSpeaking ? "Speaking" : "Other");
+            if (state == kDeviceStateSpeaking) {
+                pause = !pause;
+                if (pause) {
+                    codec->EnableOutput(false);
+                    app.PausePlay(true);
+                    display->ShowNotification("已暂停");
+                    lv_label_set_text(display->main_btn_chat_label_, "继续");
+                    if (display->content_) {
+                        lv_obj_add_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                    if (display->main_btn_new_chat_) {
+                        lv_obj_remove_flag(display->main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                } else {
+                    codec->EnableOutput(true);
+                    app.PausePlay(false);
+                    display->ShowNotification("说话中...");
+                    lv_label_set_text(display->main_btn_chat_label_, "暂停");
+                    if (display->content_) {
+                        lv_obj_remove_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                    if (display->main_btn_new_chat_) {
+                        lv_obj_add_flag(display->main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+                    }
+                }
             } else {
-                ESP_LOGI(TAG, "Other");
+                codec->EnableOutput(true);
+                if (display->content_) {
+                    lv_obj_remove_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+                }
+                if (display->main_btn_new_chat_) {
+                    lv_obj_add_flag(display->main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+                }
+                app.ToggleChatState();
+                app.PausePlay(false);
             }
-        } 
+        } else if (btn == display->main_btn_new_chat_) { // 新对话
+            codec->EnableOutput(true);
+            if (display->main_btn_new_chat_) {
+                lv_obj_add_flag(display->main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (display->chat_message_label_) {
+                lv_label_set_text(display->chat_message_label_, "");
+            }
+            if (display->content_) {
+                lv_obj_remove_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+            }
+            app.ToggleChatState();
+            pause = false;
+        }
     }
 }
 
@@ -1197,7 +1238,9 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_radius(status_bar_, 0, 0);
     lv_obj_set_style_bg_color(status_bar_, current_theme_.background, 0);
     lv_obj_set_style_text_color(status_bar_, current_theme_.text, 0);
-    
+    // Add for XiaoZhi-Card Board. 状态栏不滚动
+    lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_SCROLLABLE);  
+
     /* Content */
     content_ = lv_obj_create(container_);
     lv_obj_set_scrollbar_mode(content_, LV_SCROLLBAR_MODE_OFF);
@@ -1209,7 +1252,9 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_border_color(content_, current_theme_.border, 0); // Border color for content
 
     lv_obj_set_flex_flow(content_, LV_FLEX_FLOW_COLUMN); // 垂直布局（从上到下）
-    lv_obj_set_flex_align(content_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_SPACE_EVENLY); // 子对象居中对齐，等距分布
+    // lv_obj_set_flex_align(content_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_SPACE_EVENLY); // 子对象居中对齐，等距分布
+    // Add for XiaoZhi-Card Board. 子对象顶部对齐，居中对齐，顶部对齐
+    lv_obj_set_flex_align(content_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 
     emotion_label_ = lv_label_create(content_);
     lv_obj_set_style_text_font(emotion_label_, &font_awesome_30_4, 0);
@@ -1223,10 +1268,15 @@ void EpdDisplay::SetupUI() {
 
     chat_message_label_ = lv_label_create(content_);
     lv_label_set_text(chat_message_label_, "");
-    lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9); // 限制宽度为屏幕宽度的 90%
-    lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP); // 设置为自动换行模式
+    // lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);                   // 限制宽度为屏幕宽度的 90%
+    // lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);           // 设置为自动换行模式
+    // lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0); // 设置文本居中对齐
+    // lv_obj_set_style_text_color(chat_message_label_, current_theme_.text, 0);
+    // Add for XiaoZhi-Card Board. 限制宽度为屏幕宽度的 90%，限制高度为屏幕高度的 40%，设置为自动换行模式，设置文本居中对齐
+    lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);                   // 限制宽度为屏幕宽度的 90%
+    lv_obj_set_height(chat_message_label_, LV_VER_RES * 0.4);                  // 限制高度，防止与按钮区域重叠 -- 文字被遮挡，待处理  
+    lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);           // 设置为自动换行模式
     lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0); // 设置文本居中对齐
-    lv_obj_set_style_text_color(chat_message_label_, current_theme_.text, 0);
 
     /* Status bar */
     lv_obj_set_flex_flow(status_bar_, LV_FLEX_FLOW_ROW);
@@ -1240,6 +1290,7 @@ void EpdDisplay::SetupUI() {
     lv_label_set_text(network_label_, "");
     lv_obj_set_style_text_font(network_label_, fonts_.icon_font, 0);
     lv_obj_set_style_text_color(network_label_, current_theme_.text, 0);
+    lv_obj_set_style_pad_left(network_label_, 2, 0); // 内移两个像素 
 
     notification_label_ = lv_label_create(status_bar_);
     lv_obj_set_flex_grow(notification_label_, 1);
@@ -1263,6 +1314,8 @@ void EpdDisplay::SetupUI() {
     lv_label_set_text(battery_label_, "");
     lv_obj_set_style_text_font(battery_label_, fonts_.icon_font, 0);
     lv_obj_set_style_text_color(battery_label_, current_theme_.text, 0);
+    lv_obj_set_style_pad_top(battery_label_, 2, 0);   // 下移两个像素 
+    lv_obj_set_style_pad_right(battery_label_, 2, 0); // 内移两个像素 
 
     low_battery_popup_ = lv_obj_create(scr_main_);
     lv_obj_set_scrollbar_mode(low_battery_popup_, LV_SCROLLBAR_MODE_OFF);
@@ -1314,18 +1367,34 @@ void EpdDisplay::SetupUI() {
     lv_obj_center(label);
     lv_obj_set_style_text_color(label, lv_color_black(), 0);
 
-    /* 添加切换对话状态按钮 */
-    main_btn_chat_ = lv_btn_create(scr_main_);  
-    lv_obj_remove_style_all(main_btn_chat_);  
+    /* 对话状态按钮 */
+    main_btn_chat_ = lv_btn_create(scr_main_);
+    lv_obj_remove_style_all(main_btn_chat_);
     lv_obj_align(main_btn_chat_, LV_ALIGN_TOP_MID, 0, 215);
     lv_obj_set_size(main_btn_chat_, 108, 40);
-    lv_obj_remove_flag(main_btn_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
-    lv_obj_add_event_cb(main_btn_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL); 
+    lv_obj_remove_flag(main_btn_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_event_cb(main_btn_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_style(main_btn_chat_, &style_btn, 0);
     main_btn_chat_label_ = lv_label_create(main_btn_chat_);
     lv_label_set_text(main_btn_chat_label_, "对话");
     lv_obj_center(main_btn_chat_label_);
     lv_obj_set_style_text_color(main_btn_chat_label_, lv_color_black(), 0);
+    lv_obj_add_flag(main_btn_chat_, LV_OBJ_FLAG_HIDDEN);
+
+    /* 新对话按钮 */
+    main_btn_new_chat_ = lv_btn_create(scr_main_);
+    lv_obj_remove_style_all(main_btn_new_chat_);
+    lv_obj_align(main_btn_new_chat_, LV_ALIGN_TOP_MID, 0, 150);
+    lv_obj_set_size(main_btn_new_chat_, 108, 40);
+    lv_obj_remove_flag(main_btn_new_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_event_cb(main_btn_new_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_style(main_btn_new_chat_, &style_btn, 0);
+    label = lv_label_create(main_btn_new_chat_);
+    lv_obj_set_style_text_font(label, fonts_.text_font, 0);
+    lv_label_set_text(label, "新对话");
+    lv_obj_center(label);
+    lv_obj_set_style_text_color(label, lv_color_black(), 0);
+    lv_obj_add_flag(main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
 
     /* 添加手势触发回调 */
     lv_obj_add_event_cb(scr_main_, scr_main_event_cb, LV_EVENT_GESTURE, NULL);

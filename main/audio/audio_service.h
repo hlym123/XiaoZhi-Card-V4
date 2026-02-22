@@ -106,6 +106,7 @@ public:
     void PlaySound(const std::string_view& sound);
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
+    void Pause(bool enable) { pause_ = enable; }
 
 private:
     AudioCodec* codec_ = nullptr;
@@ -140,6 +141,7 @@ private:
     bool audio_processor_initialized_ = false;
     bool voice_detected_ = false;
     bool service_stopped_ = true;
+    bool pause_ = false;
     bool audio_input_need_warmup_ = false;
 
     esp_timer_handle_t audio_power_timer_ = nullptr;

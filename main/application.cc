@@ -557,9 +557,13 @@ void Application::Start() {
         std::string message = std::string(Lang::Strings::VERSION) + ota.GetCurrentVersion();
         display->ShowNotification(message.c_str());
         display->SetChatMessage("system", "");
-        // Play the success sound to indicate the device is ready
-        audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
+        audio_service_.PlaySound(Lang::Sounds::OGG_WELCOME);
     }
+
+    // Add for XiaoZhi-Card Board. 设置对话按钮可见性
+    lvgl_port_lock(0);
+    lv_obj_remove_flag(display->main_btn_chat_, LV_OBJ_FLAG_HIDDEN); // 显示对话按钮
+    lvgl_port_unlock();
 }
 
 // Add a async task to MainLoop
@@ -694,16 +698,47 @@ void Application::SetDeviceState(DeviceState state) {
     DeviceStateEventManager::GetInstance().PostStateChangeEvent(previous_state, state);
 
     auto& board = Board::GetInstance();
+    auto codec = board.GetAudioCodec();
     auto display = board.GetDisplay();
     auto led = board.GetLed();
     led->OnStateChanged();
+    // Add for XiaoZhi-Card Board. 设置主页面内容区域可见性
+    display->SetContentVisible(true);
+    display->SetBtnNewChatVisible(false);
+    PausePlay(false);
+    static int64_t listen_start_time = 0;
+    static int64_t total_listen_time = 0;
+    static int cnt = 0;
     switch (state) {
         case kDeviceStateUnknown:
         case kDeviceStateIdle:
             display->SetStatus(Lang::Strings::STANDBY);
             display->SetEmotion("neutral");
+            // Add for XiaoZhi-Card Board. 设置对话按钮内容
+            display->SetBtnChatMessage("对话");
+            board.SetIndicator(0, 0, 50); // 指示灯亮蓝色（待机）
+
             audio_service_.EnableVoiceProcessing(false);
             audio_service_.EnableWakeWordDetection(true);
+
+            // Add for XiaoZhi-Card Board. 自动全刷功能：累计 Listening 时长超过 30 秒退出时全刷
+            // 如果上一个状态是 Listening，更新累计时长
+            if (previous_state == kDeviceStateListening && listen_start_time != 0) {
+                int64_t duration = esp_timer_get_time() - listen_start_time;
+                total_listen_time += duration;
+                listen_start_time = 0;
+            }
+            // 超过 30 秒就全刷
+            if (cnt != 0 && total_listen_time > 30 * 1000000) {
+                // Fixe Me: Ringbuffer of AFE(FEED) is full 
+                lvgl_port_lock(0);
+                board.ClearDisplay(0x00);
+                lv_obj_invalidate(lv_screen_active());   
+                lv_refr_now(NULL);
+                lvgl_port_unlock();
+                total_listen_time = 0;  // 重置累计时间
+            }
+            cnt = 1;
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -713,10 +748,13 @@ void Application::SetDeviceState(DeviceState state) {
         case kDeviceStateListening:
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
-
-            // Make sure the audio processor is running
+            // Add for XiaoZhi-Card Board. 设置对话按钮内容
+            display->SetBtnChatMessage("退出");
+            board.SetIndicator(0, 50, 0);
+            if (previous_state != kDeviceStateListening && listen_start_time == 0) {
+                listen_start_time = esp_timer_get_time();
+            }
             if (!audio_service_.IsAudioProcessorRunning()) {
-                // Send the start listening command
                 protocol_->SendStartListening(listening_mode_);
                 audio_service_.EnableVoiceProcessing(true);
                 audio_service_.EnableWakeWordDetection(false);
@@ -724,6 +762,9 @@ void Application::SetDeviceState(DeviceState state) {
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);
+            // Add for XiaoZhi-Card Board. 设置对话按钮内容
+            display->SetBtnChatMessage("暂停");
+            codec->EnableOutput(true);
 
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);

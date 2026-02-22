@@ -598,7 +598,10 @@ void XiaozhiCardBoard::Shutdown()
     lvgl_port_lock(0);  
     ClearDisplay(0x00);
     lv_screen_load(display_->scr_shutdown_);
-    lv_refr_now(NULL);   
+    for (int i = 0; i < 5; i++) {
+        lv_obj_invalidate(lv_screen_active());   
+        lv_refr_now(NULL);
+    } 
     lvgl_port_unlock();  
 
     esp_task_wdt_delete(event_task_handle_);
@@ -779,12 +782,13 @@ Display *XiaozhiCardBoard::GetDisplay()
 bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &discharging)
 {
     static uint8_t countdown = 10;
-    static char text_tip[64];
+    static char text_tip[64] = {0};
     static float bat_vol;
     static bool last_charging = false;
     static MovingAverageFilter bat_filter(60); // 60 点滑动平均
     float raw_level;
     static int last_level = 0;
+    static lv_obj_t *scr = nullptr;
 
     /* 读取电池电压 */
     bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
@@ -797,19 +801,36 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
         } 
     }
 
+    /* 电池电量显示 */
     float filtered_level = bat_filter.update(raw_level);
     level = static_cast<int>(filtered_level + 0.5f); // 平均值取整
     if (last_level != level) { // 状态变化时才更新显示 
         last_level = level;
+        if (lv_screen_active() == display_->scr_setup_) { // 设置页面电量显示更新 
+            if (lvgl_port_lock(1000)) {
+                lv_label_set_text_fmt(display_->setup_label_battery_, "%d", level);
+                lvgl_port_unlock();
+            }
+        }
     }
 
+    /* 充电状态 */
     charging = (charger_->GetChargeState() != 0);
     discharging = !charging;
-
-    // 电量低于 4V 且未在充电时，请求开启充电（防抖：仅进入该状态时发一次）
-    {
+    if (charging) {
+        auto &app = Application::GetInstance();
+        if (app.GetDeviceState() != kDeviceStateListening) {
+            SetIndicator(0, 0, 50); // 蓝色充电指示灯
+        }
+        if (countdown < 10) {
+            if (scr) {
+                lv_screen_load(scr);
+            }
+        }
+        countdown = 10;
+    } else {
         static bool sent_enable_charge_for_low_battery = false;
-        if (bat_vol < 4.0f && !charging) {
+        if (bat_vol < 4.0f) { // 未充电且电压低于 4.0V 时，尝试开启充电
             if (!sent_enable_charge_for_low_battery) {
                 PostEvent(BoardEvent::EnableCharge);
                 sent_enable_charge_for_low_battery = true;
@@ -817,6 +838,26 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
         } else {
             sent_enable_charge_for_low_battery = false;
         }
+        if (bat_vol <= BAT_VOL_EMPTY) { // 电量低于 3.5V 时，显示低电量提示 
+            if (countdown < 10) {
+                snprintf(text_tip, sizeof(text_tip), "电量低 %d 秒后将关机", countdown);
+                lvgl_port_lock(0);
+                lv_label_set_text(display_->scr_tip_label_title_, "电量低，请充电！");
+                lv_label_set_text(display_->scr_tip_label_, text_tip);
+                if (countdown == 5) {
+                    scr = lv_screen_active(); // 记录当前页面 
+                    lv_label_set_text(display_->scr_tip_label_title_, "电量低，请充电！");
+                    lv_label_set_text(display_->scr_tip_label_, text_tip);
+                    lv_screen_load(display_->scr_tip_);
+                }
+                lvgl_port_unlock();
+            }
+            ESP_LOGI(TAG, "%s", text_tip);
+            if (--countdown <= 0) {
+                ESP_LOGI(TAG, "低电量关机");
+                PostEvent(BoardEvent::Shutdown);
+            }
+        } 
     }
 
     return true;

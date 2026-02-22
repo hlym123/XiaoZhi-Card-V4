@@ -255,6 +255,46 @@ void Display::UpdateVolume(int volume) {
 }
 
 /**
+ * 对话按钮 label 设置
+ */
+void Display::SetBtnChatMessage(const char* content) {
+    DisplayLockGuard lock(this);
+    if (main_btn_chat_label_ == nullptr) {
+        return;
+    }
+    lv_label_set_text(main_btn_chat_label_, content);
+}
+
+/**
+ * 新对话按钮可见性设置
+ */
+void Display::SetBtnNewChatVisible(bool visible) {
+    DisplayLockGuard lock(this);  
+    if (main_btn_new_chat_ == nullptr) {
+        return;
+    }
+
+    if (visible) {
+        lv_obj_remove_flag(main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(main_btn_new_chat_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/**
+ * 主页面内容区域可见性设置
+ */
+void Display::SetContentVisible(bool visible) {
+    DisplayLockGuard lock(this);  
+    
+    if (visible) {
+        lv_obj_remove_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+/**
  * 全刷 
  */
 void Display::FullRefresh() {

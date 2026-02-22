@@ -289,11 +289,16 @@ void AudioService::AudioOutputTask() {
         lock.unlock();
 
         if (!codec_->output_enabled()) {
+            // Add for XiaoZhi-Card Board. 设置对话按钮内容
+            if (!pause_) {
+                codec_->EnableOutput(true);
+            }
             esp_timer_stop(audio_power_timer_);
             esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
-            codec_->EnableOutput(true);
         }
-        codec_->OutputData(task->pcm);
+        if (!pause_) {
+            codec_->OutputData(task->pcm);
+        }
 
         /* Update the last output time */
         last_output_time_ = std::chrono::steady_clock::now();
@@ -540,7 +545,7 @@ void AudioService::SetCallbacks(AudioServiceCallbacks& callbacks) {
 }
 
 void AudioService::PlaySound(const std::string_view& ogg) {
-    if (!codec_->output_enabled()) {
+    if (!codec_->output_enabled() && !pause_) {
         esp_timer_stop(audio_power_timer_);
         esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
         codec_->EnableOutput(true);

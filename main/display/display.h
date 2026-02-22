@@ -37,8 +37,11 @@ public:
     inline int height() const { return height_; }
 
     /* Add for XiaoZhi-Card Board */
-    void UpdateVolume(int volume);
-    void FullRefresh();
+    void UpdateVolume(int volume);               // 音量显示
+    void FullRefresh();                          // 全刷
+    void SetBtnChatMessage(const char* content); // 对话按钮内容
+    void SetBtnNewChatVisible(bool visible);     // 新对话按钮可见性
+    void SetContentVisible(bool visible);        // 主页面内容区域可见性
 
     // 引导页面 
     lv_obj_t *scr_startup_ = nullptr;
@@ -61,7 +64,8 @@ public:
     // 主页面
     lv_obj_t *scr_main_ = nullptr;
     lv_obj_t *main_btn_chat_ = nullptr;            // 对话状态切换 
-    lv_obj_t *main_btn_chat_label_ = nullptr;      // 
+    lv_obj_t *main_btn_chat_label_ = nullptr;      //
+    lv_obj_t *main_btn_new_chat_ = nullptr;        // 新对话
     lv_obj_t *main_btn_confirm_upgrade_ = nullptr; // 确认升级
     lv_obj_t *main_btn_skip_upgrade_ = nullptr;    // 暂不升级 
     // 设置页面  

@@ -62,7 +62,8 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
-
+    // Add for XiaoZhi-Card
+    void PausePlay(bool enable) { audio_service_.Pause(enable); }
 private:
     Application();
     ~Application();
