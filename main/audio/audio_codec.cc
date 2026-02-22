@@ -1,5 +1,6 @@
 #include "audio_codec.h"
 #include "board.h"
+#include "display.h"
 #include "settings.h"
 
 #include <esp_log.h>
@@ -50,7 +51,12 @@ void AudioCodec::Start() {
 void AudioCodec::SetOutputVolume(int volume) {
     output_volume_ = volume;
     ESP_LOGI(TAG, "Set output volume to %d", output_volume_);
-    
+
+    // Add for XiaoZhi-Card Board. 设置页面音量显示
+    Board& board = Board::GetInstance();
+    auto display = board.GetDisplay();
+    display->UpdateVolume(volume);
+
     Settings settings("audio", true);
     settings.SetInt("output_volume", output_volume_);
 }

@@ -40,6 +40,27 @@ LV_FONT_DECLARE(font_puhui_16_1);
 LV_FONT_DECLARE(font_awesome_16_4);
 
 
+enum class BoardEvent {
+    Shutdown,
+    Sleep,
+    WakeUp,
+    SwitchNetWork,
+    ClearWiFiConfig,
+    EnableCharge,  // 请求开启充电（如低电量时由 GetBatteryLevel 触发）
+};
+
+const char* BoardEventToString(BoardEvent e) {
+    switch (e) {
+        case BoardEvent::Shutdown:       return "Shutdown";
+        case BoardEvent::Sleep:          return "Sleep";
+        case BoardEvent::WakeUp:         return "WakeUp";
+        case BoardEvent::SwitchNetWork:  return "SwitchNetWork";
+        case BoardEvent::ClearWiFiConfig:return "ClearWiFiConfig";
+        case BoardEvent::EnableCharge:   return "EnableCharge";
+        default:                         return "Unknown";
+    }
+}
+
 class MovingAverageFilter {
 public:
     MovingAverageFilter(int size)
@@ -97,6 +118,13 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     esp_lcd_touch_handle_t touch_ = nullptr;
 
+    // 事件队列与任务
+    QueueHandle_t event_queue_ = nullptr;
+    TaskHandle_t event_task_handle_ = nullptr;
+    // 状态记录
+    NetworkType network_type_;       // 网络类型
+    bool modem_powered_on_ = false;  // 4G 模组状态
+
     // Private methods
     void InitializeI2c();            // I2C (AW32001，BQ27220，触摸屏)
     void InitializeSpi();            // SPI (显示屏，SD 卡)
@@ -108,14 +136,29 @@ private:
     void InitializeTools();          // 
 
     // Display operations
-    void ClearDisplay(uint8_t color); 
+    void ClearDisplay(uint8_t color);
+
+    bool IsGuidePageRequired(); // 是否显示引导页  
+    void StartUp();             // 开机：启动 4G 模组、切换网络、初始化工具
+    void Shutdown();            // 关机：充电中仅打日志返回，否则关屏、退看门狗、进入运输模式
+    void PowerOnModem();        // 开机 4G 模组
+    void PowerOffModem();       // 关机 4G 模组
+    void Enable4G(void);        // 开启 4G 模组
+    void Disable4G(void);       // 关闭 4G 模组
 
     virtual Display *GetDisplay() override;
 
 public:
     XiaozhiCardBoard();
     ~XiaozhiCardBoard();
-    void SetIndicator(uint8_t r, uint8_t g, uint8_t b); // 设置（底座）指示灯 
+    void SetIndicator(uint8_t r, uint8_t g, uint8_t b); // 设置（底座）指示灯
+
+    // 板级事件：投递到队列，由 BoardEventTask 在独立任务中处理
+    static void BoardEventTask(void* param);
+    void StartBoardEventTask();
+    void PostEvent(const BoardEvent& event);
+    void HandleBoardEvent(BoardEvent event);
+
     virtual AudioCodec *GetAudioCodec() override;
     virtual bool GetBatteryLevel(int &level, bool &charging, bool &discharging) override;
 };
@@ -157,7 +200,7 @@ void XiaozhiCardBoard::InitializeCharger()
     ESP_LOGI(TAG, "Init Charger AW32001");
 
     charger_ = new Aw32001(i2c_bus_, I2C_ADDR_AW32001);
-    charger_->SetShippingMode(false);               // 关闭运输模式 
+    // charger_->SetShippingMode(false);               // 关闭运输模式 不能手动关闭
     charger_->SetNtcFunction(false);                // 未使用 NTC
     charger_->SetDischargeCurrent(2800);            // 最大放电电流 2800mA
     charger_->SetChargeCurrent(260);                // 最大充电电流 260mA
@@ -233,13 +276,53 @@ void XiaozhiCardBoard::InitializeDisplay()
                                   .icon_font  = &font_awesome_16_4,
                                   .emoji_font = font_emoji_64_init(),
                               });
+
+    // 设置页：不再提示（引导页)
+    display_->on_click_dont_reming_ = [this]() { 
+        ESP_LOGI(TAG, "点击不再提示（引导页）");
+        nvs_handle_t handle;
+        if (nvs_open("app_config", NVS_READWRITE, &handle) == ESP_OK) {
+            nvs_set_u8(handle, "dont_remind", 1);  
+            nvs_commit(handle);
+            nvs_close(handle);
+            ESP_LOGI(TAG, "不再显示引导页");
+        }
+    }; 
+    // 设置页：关机、重置 Wi-Fi、切换网络
+    display_->on_shutdown_ = [this]() {
+        PostEvent(BoardEvent::Shutdown); 
+    };
+    // 设置页：重置 Wi-Fi
+    display_->on_clear_network_ = [this]() {
+        PostEvent(BoardEvent::ClearWiFiConfig); 
+    };
+    // 设置页：切换网络
+    display_->on_switch_network_ = [this]() {
+        PostEvent(BoardEvent::SwitchNetWork); 
+    };
 }
+
 
 void XiaozhiCardBoard::InitializeButtons()
 {
-    user_button_.OnClick([this]() {
-        auto& app = Application::GetInstance();
-        app.ToggleChatState();
+    user_button_.OnClick([this]() { // 单击切换对话暂停 
+        Application::GetInstance().Schedule([] {
+            if (lvgl_port_lock(3000)) {
+                auto& board = Board::GetInstance();
+                auto display = board.GetDisplay();
+                bool is_main_screen = (lv_screen_active() == display->scr_main_); // 在主页面时才有效 
+                lvgl_port_unlock();
+                if (!is_main_screen) {
+                    return;
+                }
+                auto& app = Application::GetInstance();
+                app.ToggleChatState();
+            }
+        });
+    });
+
+    user_button_.OnDoubleClick([this]() { // 双击关机 
+        PostEvent(BoardEvent::Shutdown);
     });
 }
 
@@ -277,6 +360,372 @@ void XiaozhiCardBoard::InitializeTools()
     // 底座 Grove 口
 }
 
+void XiaozhiCardBoard::BoardEventTask(void* param)
+{
+    auto* self = static_cast<XiaozhiCardBoard*>(param);
+    BoardEvent event;
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    while (1) {
+        esp_task_wdt_reset();
+        if (xQueueReceive(self->event_queue_, &event, pdMS_TO_TICKS(1000))) {
+            ESP_LOGI(TAG, "Received event: %s", BoardEventToString(event));
+            self->HandleBoardEvent(event);
+        }
+    }
+}
+
+void XiaozhiCardBoard::StartBoardEventTask()
+{
+    event_queue_ = xQueueCreate(8, sizeof(BoardEvent));
+    if (!event_queue_) {
+        ESP_LOGE(TAG, "Failed to create event queue");
+        return;
+    }
+    xTaskCreatePinnedToCore(
+        BoardEventTask,
+        "BoardEventTask",
+        8192,
+        this,
+        10,
+        &event_task_handle_,
+        0
+    );
+}
+
+void XiaozhiCardBoard::PostEvent(const BoardEvent& event)
+{
+    if (!event_queue_) {
+        ESP_LOGW(TAG, "Event queue not initialized");
+        return;
+    }
+    xQueueSend(event_queue_, &event, 0);
+}
+
+void XiaozhiCardBoard::HandleBoardEvent(BoardEvent event)
+{
+    switch (event) {
+        case BoardEvent::Shutdown:
+            Shutdown();
+            break;
+        case BoardEvent::Sleep:
+            // TODO: 进入 light sleep 等，本板暂无 Sleep 封装
+            break;
+        case BoardEvent::WakeUp:
+            // TODO: 从 sleep 恢复后的处理，本板暂无 WakeUp 封装
+            break;
+        case BoardEvent::SwitchNetWork:
+            SwitchNetworkType();
+            break;
+        case BoardEvent::ClearWiFiConfig:
+            if (GetNetworkType() == NetworkType::WIFI) {
+                auto& wifi_board = static_cast<WifiBoard&>(GetCurrentBoard());
+                wifi_board.ResetWifiConfiguration();
+            }
+            break;
+        case BoardEvent::EnableCharge:
+            if (charger_) {
+                charger_->SetCharge(true);
+                SetIndicator(0, 50, 50);
+                ESP_LOGI(TAG, "==== Enable Charge ====");
+            }
+            break;
+        default:
+            ESP_LOGW(TAG, "Unknown event type: %d", static_cast<int>(event));
+            break;
+    }
+}
+
+/**
+ * 是否需要显示引导页
+ */
+bool XiaozhiCardBoard::IsGuidePageRequired(void) 
+{  
+    nvs_handle_t handle;
+    esp_err_t err;
+    char stored_ver[32] = {0};
+    size_t len = sizeof(stored_ver);
+    bool dont_remind = false;
+    const char *current_ver = esp_app_get_description()->version;
+    
+    err = nvs_open("app_config", NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE("GUIDE", "NVS open failed");
+        return true; // 默认提示
+    }
+
+    // 获取保存的版本号和 dont_remind 标志
+    bool has_ver = (nvs_get_str(handle, "version", stored_ver, &len) == ESP_OK);
+    bool has_flag = (nvs_get_u8(handle, "dont_remind", (uint8_t *)&dont_remind) == ESP_OK);
+
+    if (!has_ver || strcmp(stored_ver, current_ver) != 0) {
+        // 版本号不一致或首次运行 → 重置标志
+        nvs_set_str(handle, "version", current_ver);
+        nvs_set_u8(handle, "dont_remind", 0);  // 重置为 false
+        nvs_commit(handle);
+        dont_remind = false;
+        ESP_LOGI("GUIDE", "Version changed (%s -> %s), reset flag", stored_ver, current_ver);
+    }
+
+    nvs_close(handle);
+    return !dont_remind;
+}
+
+/**
+ * 
+ */
+RTC_DATA_ATTR int sleep_retry_count = 0; // RTC变量，唤醒后保留
+void XiaozhiCardBoard::StartUp()
+{
+    /* */
+    int sleep_retry_count = 0;
+    if (!guage_->detect()) { // 未检测到电池（电池过放？）  
+        if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) { // 第一次或仍未检测到电池，进入低电提示界面
+            lvgl_port_lock(0);
+            lv_label_set_text(display_->scr_tip_label_title_, "低电量充电中请等待");
+            lv_label_set_text(display_->scr_tip_label_, "");
+            if (lv_screen_active() != display_->scr_tip_) {
+                ClearDisplay(0x00);
+                lv_screen_load(display_->scr_tip_);
+                for (int i = 0; i < 3; i++) {
+                    lv_obj_invalidate(lv_screen_active());   
+                    lv_refr_now(NULL);
+                }
+            }
+            lvgl_port_unlock();
+        }
+
+        // 睡眠时间递增：10 → 20 → ... 最多 60 秒
+        int sleep_duration = 10 + sleep_retry_count * 10;
+        if (sleep_duration > 60) sleep_duration = 60;
+
+        ESP_LOGW(TAG, "电池未检测到，准备深度睡眠 %d 秒", sleep_duration);
+
+        ++sleep_retry_count; // 下次睡眠时间加倍
+        esp_sleep_enable_timer_wakeup(sleep_duration * 1000000LL);
+        esp_deep_sleep_start();
+        return; // 不会执行到这里
+    }
+    sleep_retry_count = 0;
+
+    float bat_vol = 0;
+    int bat_cur = 0;
+    int sec = 5;
+    char text_tip[64] = {0};
+    char text_bat_info[64] = {0};
+    int tick = 0;
+    bool increasing = true;
+    int brightness = 0;
+    bool charging = false;
+    while (1) {
+        if (tick++ % 20 == 0) {
+            bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
+            bat_cur = guage_->getCurr(CURR_MODE::CURR_INSTANT);
+            snprintf(text_bat_info, sizeof(text_bat_info), "电压: %.1fV\n电流: %dmA", bat_vol, bat_cur);
+            ESP_LOGI(TAG, "%s", text_bat_info);
+            if (bat_vol < 3.5) {
+                charging = charger_->GetChargeState(); // 获取充电状态 
+                if (!charging) { // 低电压，未充电 --> 低电量即将关机 
+                    snprintf(text_tip, sizeof(text_tip), "电量低 %d 秒后将关机", sec);
+                    if (sec-- <= 0) {
+                        Shutdown();
+                        vTaskDelay(pdMS_TO_TICKS(5000));
+                    }
+                } else { // 低电压，充电中 --> 指示灯呼吸 显示电压 
+                    sec = 5;  
+                    snprintf(text_tip, sizeof(text_tip), "电量低，充电中...");
+                }
+
+                lvgl_port_lock(0);
+                lv_label_set_text(display_->scr_tip_label_title_, text_tip);
+                lv_label_set_text(display_->scr_tip_label_, text_bat_info);
+                if (lv_screen_active() != display_->scr_tip_) {
+                    ClearDisplay(0x00);
+                    lv_screen_load(display_->scr_tip_);
+                    for (int i = 0; i < 3; i++) {
+                        lv_obj_invalidate(lv_screen_active());   
+                        lv_refr_now(NULL);
+                    }
+                }
+                lvgl_port_unlock();
+            } else {
+                break;
+            }
+        }
+
+        if (increasing) {
+            brightness += 5;
+            if (brightness >= 255) {
+                brightness = 255;
+                increasing = false;
+            }
+        } else {
+            brightness -= 5;
+            if (brightness <= 0) {
+                brightness = 0;
+                increasing = true;
+            }
+        }
+        SetIndicator(0, 0, brightness);  
+
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    SetIndicator(0, 0, 50);  
+} 
+
+void XiaozhiCardBoard::Shutdown()
+{
+    ESP_LOGI(TAG, "Shutdown");
+    if (charger_->GetChargeState()) {
+        ESP_LOGI(TAG, "充电中不能关机");
+
+        lvgl_port_lock(0);
+        lv_obj_t* scr = lv_screen_active();
+        lv_label_set_text(display_->scr_tip_label_title_, "充电中不能关机");
+        lv_label_set_text(display_->scr_tip_label_, "");
+        lv_screen_load(display_->scr_tip_);
+        lv_refr_now(NULL);
+        lvgl_port_unlock();
+
+        vTaskDelay(pdMS_TO_TICKS(1000));  
+
+        lvgl_port_lock(0);
+        lv_screen_load(scr);
+        lvgl_port_unlock();
+        return;
+    }
+
+    lvgl_port_lock(0);  
+    ClearDisplay(0x00);
+    lv_screen_load(display_->scr_shutdown_);
+    lv_refr_now(NULL);   
+    lvgl_port_unlock();  
+
+    esp_task_wdt_delete(event_task_handle_);
+
+    NetworkType network_type = GetNetworkType();
+    if (network_type == NetworkType::ML307) {
+        // auto& board = Board::GetInstance();
+        // auto& dual_board = static_cast<DualNetworkBoard&>(board);
+        // auto& ml307_board = static_cast<Ml307Board&>(dual_board.GetCurrentBoard());
+        // for (int i = 0; i < 5; i++) {
+        //     if (ml307_board.PowerOff()) {
+        //         modem_powered_on_ = false;
+        //         ESP_LOGI(TAG, "4G POWER OFF SUCCESS"); 
+        //         break; 
+        //     } else {
+        //         vTaskDelay(pdMS_TO_TICKS(100));
+        //     }
+        // }
+        PowerOffModem();
+    } else if (network_type == NetworkType::WIFI) { // 确认 4G 模组已关机 
+        uint8_t i = 0; 
+        while (i++ < 10) {
+            if (modem_powered_on_) { 
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+    }
+  
+    charger_->SetShippingMode(true); 
+    vTaskDelay(pdMS_TO_TICKS(3000));  
+}
+
+void XiaozhiCardBoard::PowerOnModem() 
+{
+    ESP_LOGI(TAG, "Power On Modem");
+
+    gpio_num_t pwr_pin = ML307R_PIN_PWR;
+    gpio_reset_pin(pwr_pin);
+    gpio_set_direction(pwr_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(pwr_pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // 关机状态下，PWR 拉低 2s ~ 3.5s 开机 （pwr 逻辑反转）
+    gpio_set_level(pwr_pin, 1); 
+    vTaskDelay(pdMS_TO_TICKS(2500));
+    gpio_set_level(pwr_pin, 0);
+
+    // reset 
+    ESP_LOGI(TAG, "Reset Modem");
+    gpio_num_t rst_pin = ML307R_PIN_RST;
+    gpio_reset_pin(rst_pin);
+    gpio_set_direction(rst_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(rst_pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(rst_pin, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(rst_pin, 0);
+}
+
+void XiaozhiCardBoard::PowerOffModem() 
+{
+    ESP_LOGI(TAG, "Power Off Modem");
+
+    gpio_num_t pwr_pin = ML307R_PIN_PWR;
+    gpio_reset_pin(pwr_pin);
+    gpio_set_direction(pwr_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(pwr_pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    // 开机状态下，PWR 拉低 3.5 ~ 4.0s 关机 （pwr 逻辑反转）
+    gpio_set_level(pwr_pin, 1); 
+    vTaskDelay(pdMS_TO_TICKS(3750));
+    gpio_set_level(pwr_pin, 0);
+}
+
+void XiaozhiCardBoard::Enable4G(void)
+{
+    ESP_LOGI(TAG, "Enable4G");
+
+    struct TaskWrapper {
+        static void run(void *param) {
+            auto *self = static_cast<XiaozhiCardBoard*>(param);
+            self->PowerOnModem();
+            self->modem_powered_on_ = true;
+            vTaskDelete(NULL);
+        }
+    };
+
+    xTaskCreate(TaskWrapper::run, "enable_4g_task", 8192, this, 6, NULL);
+}
+
+void XiaozhiCardBoard::Disable4G(void)
+{
+    ESP_LOGI(TAG, "Disable4G");
+
+    struct TaskWrapper {
+        static void run(void *param) {
+            auto* self = static_cast<XiaozhiCardBoard*>(param);
+            vTaskDelay(pdMS_TO_TICKS(3000)); // 等待模组启动完成
+            self->PowerOffModem();
+            // auto modem = AtModem::Detect(ML307R_PIN_TX, ML307R_PIN_RX, ML307R_PIN_DTR, 115200);
+            // if (!modem) { // Wi-Fi 切换到 4G 时 AtModem: Failed to send AT+CGMM command，这里做判断处理
+            //     ESP_LOGE(TAG, "Failed to detect modem");
+            //     self->PowerOffModem();
+            // } else {
+            //     auto uart = modem->GetAtUart();
+            //     for (int i = 0; i < 5; i++) {
+            //         if (uart->SendCommand("AT+MPOF=0", 1000)) {
+            //             std::string response = uart->GetResponse();
+            //             if (response == "POWER OFF") {
+            //                 ESP_LOGI(TAG, "4G POWER OFF SUCCESS"); 
+            //                 break;
+            //             }
+            //         }
+            //         if (i == 4) {
+            //             self->PowerOffModem();
+            //             break;
+            //         }
+            //     }
+            // }
+            self->modem_powered_on_ = false;  
+            vTaskDelete(NULL);
+        }
+    };
+
+    xTaskCreate(TaskWrapper::run, "disable_4g_task", 4096, this, 5, NULL);
+}
+
 XiaozhiCardBoard::XiaozhiCardBoard() : DualNetworkBoard(ML307R_PIN_TX, ML307R_PIN_RX, ML307R_PIN_DTR),
          user_button_(USER_BUTTON_GPIO, false, 2000, 400) // 双击间隔为 400ms 内 
 {
@@ -289,6 +738,24 @@ XiaozhiCardBoard::XiaozhiCardBoard() : DualNetworkBoard(ML307R_PIN_TX, ML307R_PI
     InitializeButtons();
     InitializeIndicator();
     InitializeTools();
+    StartBoardEventTask();
+        
+    StartUp();
+    if (IsGuidePageRequired()) {
+        lv_screen_load(display_->scr_startup_);  
+    } else {
+        lv_screen_load(display_->scr_main_);  
+    }
+
+    Enable4G(); // 启动 4G 模组 
+    network_type_ = GetNetworkType();
+    ESP_LOGI(TAG, "Current network type: %s", 
+                    network_type_ == NetworkType::WIFI ? "WiFi" : 
+                    network_type_ == NetworkType::ML307 ? "ML307" : "Unknown");
+    if (network_type_ == NetworkType::WIFI) { // 如果使用 Wi-Fi 则需要关闭 4G 
+        Disable4G(); 
+    }  
+
 }
 
 XiaozhiCardBoard::~XiaozhiCardBoard()
@@ -339,9 +806,25 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
     charging = (charger_->GetChargeState() != 0);
     discharging = !charging;
 
+    // 电量低于 4V 且未在充电时，请求开启充电（防抖：仅进入该状态时发一次）
+    {
+        static bool sent_enable_charge_for_low_battery = false;
+        if (bat_vol < 4.0f && !charging) {
+            if (!sent_enable_charge_for_low_battery) {
+                PostEvent(BoardEvent::EnableCharge);
+                sent_enable_charge_for_low_battery = true;
+            }
+        } else {
+            sent_enable_charge_for_low_battery = false;
+        }
+    }
+
     return true;
 }
 
+/**
+ * 
+ */
 void XiaozhiCardBoard::ClearDisplay(uint8_t color)
 {
     static uint8_t *buf = nullptr;

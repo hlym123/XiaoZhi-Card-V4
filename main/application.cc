@@ -15,8 +15,16 @@
 #include <arpa/inet.h>
 #include <font_awesome.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "esp_lvgl_port.h"
+
+
 #define TAG "Application"
 
+// Add for XiaoZhi-Card Board.
+// 升级确认队列 
+extern QueueHandle_t upgrade_queue;
 
 static const char* const STATE_STRINGS[] = {
     "unknown",
@@ -102,43 +110,70 @@ void Application::CheckNewVersion(Ota& ota) {
         retry_count = 0;
         retry_delay = 10; // 重置重试延迟时间
 
+        /* 检查到新版本 */
         if (ota.HasNewVersion()) {
-            Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download", Lang::Sounds::OGG_UPGRADE);
+            // Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download", Lang::Sounds::OGG_UPGRADE);
+            // vTaskDelay(pdMS_TO_TICKS(3000));
 
-            vTaskDelay(pdMS_TO_TICKS(3000));
-
-            SetDeviceState(kDeviceStateUpgrading);
-            
-            std::string message = std::string(Lang::Strings::NEW_VERSION) + ota.GetFirmwareVersion();
-            display->SetChatMessage("system", message.c_str());
-
-            board.SetPowerSaveMode(false);
-            audio_service_.Stop();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-
-            bool upgrade_success = ota.StartUpgrade([display](int progress, size_t speed) {
-                std::thread([display, progress, speed]() {
-                    char buffer[32];
-                    snprintf(buffer, sizeof(buffer), "%d%% %uKB/s", progress, speed / 1024);
-                    display->SetChatMessage("system", buffer);
-                }).detach();
-            });
-
-            if (!upgrade_success) {
-                // Upgrade failed, restart audio service and continue running
-                ESP_LOGE(TAG, "Firmware upgrade failed, restarting audio service and continuing operation...");
-                audio_service_.Start(); // Restart audio service
-                board.SetPowerSaveMode(true); // Restore power save mode
-                Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark", Lang::Sounds::OGG_EXCLAMATION);
-                vTaskDelay(pdMS_TO_TICKS(3000));
-                // Continue to normal operation (don't break, just fall through)
+            /* 等待用户确认升级 */
+            upgrade_queue = xQueueCreate(5, sizeof(int));
+            lvgl_port_lock(0);
+            lv_obj_add_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(display->main_btn_confirm_upgrade_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(display->main_btn_skip_upgrade_, LV_OBJ_FLAG_HIDDEN);
+            lvgl_port_unlock();
+            int upgrade = 0;
+            if (!xQueueReceive(upgrade_queue, &upgrade, pdMS_TO_TICKS(30*1000))) { // 阻塞等待用户选择(30秒超时)
+                ESP_LOGW(TAG, "User did not respond to upgrade prompt.");
+                upgrade = 0;  
             } else {
-                // Upgrade success, reboot immediately
-                ESP_LOGI(TAG, "Firmware upgrade successful, rebooting...");
-                display->SetChatMessage("system", "Upgrade successful, rebooting...");
-                vTaskDelay(pdMS_TO_TICKS(1000)); // Brief pause to show message
-                Reboot();
-                return; // This line will never be reached after reboot
+                ESP_LOGI(TAG, "Ready to upgrade prompt.");
+            }
+            vQueueDelete(upgrade_queue);
+            lvgl_port_lock(0);
+            lv_obj_delete(display->main_btn_confirm_upgrade_);
+            lv_obj_delete(display->main_btn_skip_upgrade_);
+            lv_obj_remove_flag(display->content_, LV_OBJ_FLAG_HIDDEN);
+            lvgl_port_unlock();
+
+            if (upgrade == 1) {  // 确认升级
+                SetDeviceState(kDeviceStateUpgrading);
+                vTaskDelay(pdMS_TO_TICKS(500)); // 等待按键音播放完成 
+                Alert(Lang::Strings::OTA_UPGRADE, Lang::Strings::UPGRADING, "download", Lang::Sounds::OGG_UPGRADE);
+                vTaskDelay(pdMS_TO_TICKS(3000));
+
+                /* 显示升级进度 */
+                std::string message = std::string(Lang::Strings::NEW_VERSION) + ota.GetFirmwareVersion();
+                display->SetChatMessage("system", message.c_str());
+
+                board.SetPowerSaveMode(false);
+                audio_service_.Stop();
+                vTaskDelay(pdMS_TO_TICKS(1000));
+
+                bool upgrade_success = ota.StartUpgrade([display](int progress, size_t speed) {
+                    std::thread([display, progress, speed]() {
+                        char buffer[32];
+                        snprintf(buffer, sizeof(buffer), "%d%% %uKB/s", progress, speed / 1024);
+                        display->SetChatMessage("system", buffer);
+                    }).detach();
+                });
+
+                if (!upgrade_success) {
+                    // Upgrade failed, restart audio service and continue running
+                    ESP_LOGE(TAG, "Firmware upgrade failed, restarting audio service and continuing operation...");
+                    audio_service_.Start(); // Restart audio service
+                    board.SetPowerSaveMode(true); // Restore power save mode
+                    Alert(Lang::Strings::ERROR, Lang::Strings::UPGRADE_FAILED, "circle_xmark", Lang::Sounds::OGG_EXCLAMATION);
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+                    // Continue to normal operation (don't break, just fall through)
+                } else {
+                    // Upgrade success, reboot immediately
+                    ESP_LOGI(TAG, "Firmware upgrade successful, rebooting...");
+                    display->SetChatMessage("system", "Upgrade successful, rebooting...");
+                    vTaskDelay(pdMS_TO_TICKS(1000)); // Brief pause to show message
+                    Reboot();
+                    return; // This line will never be reached after reboot
+                }
             }
         }
 
@@ -331,6 +366,8 @@ void Application::Start() {
 
     /* Setup the display */
     auto display = board.GetDisplay();
+    /* Add for XiaoZhi-Card Board */
+    display->FullRefresh();
 
     // Print board name/version info
     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
@@ -339,6 +376,12 @@ void Application::Start() {
     auto codec = board.GetAudioCodec();
     audio_service_.Initialize(codec);
     audio_service_.Start();
+    // 播放开机提示音
+    audio_service_.PlaySound(Lang::Sounds::OGG_STARTUP);
+    // 等待主页面加载 
+    while (lv_screen_active() != display->scr_main_) {
+        vTaskDelay(pdMS_TO_TICKS(100)); 
+    }
 
     AudioServiceCallbacks callbacks;
     callbacks.on_send_queue_available = [this]() {

@@ -8,6 +8,7 @@
 
 #include <string>
 #include <chrono>
+#include <functional>
 
 struct DisplayFonts {
     const lv_font_t* text_font = nullptr;
@@ -35,7 +36,8 @@ public:
     inline int width() const { return width_; }
     inline int height() const { return height_; }
 
-    // Add for XiaoZhi-Card Board
+    /* Add for XiaoZhi-Card Board */
+    void UpdateVolume(int volume);
     void FullRefresh();
 
     // 引导页面 
@@ -52,10 +54,16 @@ public:
     lv_obj_t *btn_page4_next_ = nullptr;
     lv_obj_t *scr_page5_ = nullptr;
     lv_obj_t *btn_page5_next_ = nullptr;
+    // 提示页面 
+    lv_obj_t *scr_tip_ = nullptr;                
+    lv_obj_t *scr_tip_label_title_ = nullptr;
+    lv_obj_t *scr_tip_label_ = nullptr;
     // 主页面
     lv_obj_t *scr_main_ = nullptr;
-    lv_obj_t *main_btn_chat_ = nullptr;       // 对话状态切换 
-    lv_obj_t *main_btn_chat_label_ = nullptr; // 
+    lv_obj_t *main_btn_chat_ = nullptr;            // 对话状态切换 
+    lv_obj_t *main_btn_chat_label_ = nullptr;      // 
+    lv_obj_t *main_btn_confirm_upgrade_ = nullptr; // 确认升级
+    lv_obj_t *main_btn_skip_upgrade_ = nullptr;    // 暂不升级 
     // 设置页面  
     lv_obj_t *scr_setup_ = nullptr;
     lv_obj_t *label_volume_ = nullptr;
@@ -75,9 +83,21 @@ public:
     lv_obj_t *setup_btn_cancel_ = nullptr;
     lv_obj_t *setup_label_net_ = nullptr;
     // 关机页面
-    // 休眠页面
-    // 
+    lv_obj_t *scr_shutdown_ = nullptr;
+    // 休眠页面 
+    lv_obj_t *scr_sleep_ = nullptr;
 
+    // 回调函数 
+    std::function<void()> on_shutdown_ = nullptr;
+    std::function<void()> on_click_dont_reming_ = nullptr;
+    std::function<void()> on_switch_network_ = nullptr;
+    std::function<void()> on_clear_network_ = nullptr;
+    std::function<void()> on_manual_sleep_ = nullptr;
+    std::function<void()> on_auto_sleep_changed_ = nullptr;
+
+    //
+    lv_obj_t *content_ = nullptr;            // 主页面内容区域 
+    lv_obj_t *chat_message_label_ = nullptr; // 对话消息标签 
 protected:
     int width_ = 0;
     int height_ = 0;
@@ -92,7 +112,7 @@ protected:
     lv_obj_t *notification_label_ = nullptr;
     lv_obj_t *mute_label_ = nullptr;
     lv_obj_t *battery_label_ = nullptr;
-    lv_obj_t *chat_message_label_ = nullptr;
+    // lv_obj_t *chat_message_label_ = nullptr;
     lv_obj_t *low_battery_popup_ = nullptr;
     lv_obj_t *low_battery_label_ = nullptr;
     

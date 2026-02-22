@@ -18,7 +18,7 @@ protected:
 
     lv_draw_buf_t draw_buf_;
     lv_obj_t* status_bar_ = nullptr;
-    lv_obj_t* content_ = nullptr;
+    // lv_obj_t* content_ = nullptr;
     lv_obj_t* container_ = nullptr;
     lv_obj_t* side_bar_ = nullptr;
     lv_obj_t* preview_image_ = nullptr;

@@ -240,7 +240,23 @@ void Display::SetPowerSaveMode(bool on) {
     }
 }
 
-// 全刷 
+
+/* Add for XiaoZhi-Card Board. */
+
+/**
+ * 设置页面音量显示
+ */
+void Display::UpdateVolume(int volume) {
+    DisplayLockGuard lock(this);
+    if (label_volume_ == nullptr) {
+        return;
+    }
+    lv_label_set_text_fmt(label_volume_, "%d", volume);
+}
+
+/**
+ * 全刷 
+ */
 void Display::FullRefresh() {
     DisplayLockGuard lock(this);  
     auto& board = Board::GetInstance();
