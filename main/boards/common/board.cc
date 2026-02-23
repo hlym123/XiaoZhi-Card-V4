@@ -161,11 +161,21 @@ std::string Board::GetJson() {
     return json;
 }
 
+
+
 // Add for XiaoZhi-Card Board
+
+bool Board::PowerOff() {
+    return false;
+}
+
+bool Board::GetPowerSaveMode() {
+    return false;
+}
 
 void Board::ClearDisplay(uint8_t color)
 {
- 
+
 }
 
 void Board::SetIndicator(uint8_t r, uint8_t g, uint8_t b)

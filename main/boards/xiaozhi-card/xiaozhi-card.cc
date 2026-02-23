@@ -118,13 +118,17 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     esp_lcd_touch_handle_t touch_ = nullptr;
 
+    // Power management
+    PowerSaveTimer *power_save_timer_ = nullptr;
+    bool power_save_timer_user_set_ = false;
+
     // 事件队列与任务
     QueueHandle_t event_queue_ = nullptr;
     TaskHandle_t event_task_handle_ = nullptr;
     // 状态记录
     NetworkType network_type_;       // 网络类型
     bool modem_powered_on_ = false;  // 4G 模组状态
-
+ 
     // Private methods
     void InitializeI2c();            // I2C (AW32001，BQ27220，触摸屏)
     void InitializeSpi();            // SPI (显示屏，SD 卡)
@@ -141,6 +145,9 @@ private:
     bool IsGuidePageRequired(); // 是否显示引导页  
     void StartUp();             // 开机：启动 4G 模组、切换网络、初始化工具
     void Shutdown();            // 关机：充电中仅打日志返回，否则关屏、退看门狗、进入运输模式
+    void InitializePowerSaveTimer();
+    void Sleep();               // 休眠：关音频、进 light sleep，定时或触摸唤醒
+    void WakeUp();              // 唤醒后恢复
     void PowerOnModem();        // 开机 4G 模组
     void PowerOffModem();       // 关机 4G 模组
     void Enable4G(void);        // 开启 4G 模组
@@ -152,6 +159,8 @@ public:
     XiaozhiCardBoard();
     ~XiaozhiCardBoard();
     void SetIndicator(uint8_t r, uint8_t g, uint8_t b); // 设置（底座）指示灯
+    void SetPowerSaveMode(bool en) override;
+    bool GetPowerSaveMode();
 
     // 板级事件：投递到队列，由 BoardEventTask 在独立任务中处理
     static void BoardEventTask(void* param);
@@ -300,6 +309,27 @@ void XiaozhiCardBoard::InitializeDisplay()
     display_->on_switch_network_ = [this]() {
         PostEvent(BoardEvent::SwitchNetWork); 
     };
+    // 设置页：自动休眠开/关
+    display_->on_auto_sleep_changed_ = [this]() {
+        if (power_save_timer_) {
+            power_save_timer_user_set_ = true; // 用户设置过自动休眠
+            bool enabled = power_save_timer_->GetState();
+            if (enabled) {
+                lv_label_set_text(display_->setup_label_auto_sleep_, "开启自动休眠"); 
+            } else {
+                lv_label_set_text(display_->setup_label_auto_sleep_, "关闭自动休眠");
+            }
+            power_save_timer_->SetEnabled(!enabled);
+        }
+    };
+    // 设置页：手动休眠
+    display_->on_manual_sleep_ = [this]() {
+        if (power_save_timer_ && power_save_timer_->GetState()) { // 自动休眠开启时，手动休眠
+            power_save_timer_->ManualSleep();
+        } else {
+            PostEvent(BoardEvent::Sleep);
+        }
+    };
 }
 
 
@@ -365,6 +395,7 @@ void XiaozhiCardBoard::BoardEventTask(void* param)
     auto* self = static_cast<XiaozhiCardBoard*>(param);
     BoardEvent event;
     ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    ESP_ERROR_CHECK(esp_task_wdt_status(NULL));
     while (1) {
         esp_task_wdt_reset();
         if (xQueueReceive(self->event_queue_, &event, pdMS_TO_TICKS(1000))) {
@@ -408,10 +439,10 @@ void XiaozhiCardBoard::HandleBoardEvent(BoardEvent event)
             Shutdown();
             break;
         case BoardEvent::Sleep:
-            // TODO: 进入 light sleep 等，本板暂无 Sleep 封装
+            Sleep();
             break;
         case BoardEvent::WakeUp:
-            // TODO: 从 sleep 恢复后的处理，本板暂无 WakeUp 封装
+            WakeUp();
             break;
         case BoardEvent::SwitchNetWork:
             SwitchNetworkType();
@@ -425,8 +456,7 @@ void XiaozhiCardBoard::HandleBoardEvent(BoardEvent event)
         case BoardEvent::EnableCharge:
             if (charger_) {
                 charger_->SetCharge(true);
-                SetIndicator(0, 50, 50);
-                ESP_LOGI(TAG, "==== Enable Charge ====");
+                ESP_LOGI(TAG, "================== Enable Charge ==================");
             }
             break;
         default:
@@ -476,8 +506,6 @@ bool XiaozhiCardBoard::IsGuidePageRequired(void)
 RTC_DATA_ATTR int sleep_retry_count = 0; // RTC变量，唤醒后保留
 void XiaozhiCardBoard::StartUp()
 {
-    /* */
-    int sleep_retry_count = 0;
     if (!guage_->detect()) { // 未检测到电池（电池过放？）  
         if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) { // 第一次或仍未检测到电池，进入低电提示界面
             lvgl_port_lock(0);
@@ -520,7 +548,7 @@ void XiaozhiCardBoard::StartUp()
         if (tick++ % 20 == 0) {
             bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
             bat_cur = guage_->getCurr(CURR_MODE::CURR_INSTANT);
-            snprintf(text_bat_info, sizeof(text_bat_info), "电压: %.1fV\n电流: %dmA", bat_vol, bat_cur);
+            snprintf(text_bat_info, sizeof(text_bat_info), "电压: %.1fV 电流: %dmA", bat_vol, bat_cur);
             ESP_LOGI(TAG, "%s", text_bat_info);
             if (bat_vol < 3.5) {
                 charging = charger_->GetChargeState(); // 获取充电状态 
@@ -635,6 +663,110 @@ void XiaozhiCardBoard::Shutdown()
     vTaskDelay(pdMS_TO_TICKS(3000));  
 }
 
+void XiaozhiCardBoard::InitializePowerSaveTimer()
+{
+    power_save_timer_ = new PowerSaveTimer(-1, 3 * 60, -1);  // 3 分钟无操作自动休眠
+    power_save_timer_->OnEnterSleepMode([this]() {
+        ESP_LOGI(TAG, "On Enter Sleep Mode");
+        PostEvent(BoardEvent::Sleep);
+    });
+    power_save_timer_->OnExitSleepMode([this]() {
+        ESP_LOGI(TAG, "On Exit Sleep Mode");
+        PostEvent(BoardEvent::WakeUp);
+    });
+    power_save_timer_->OnShutdownRequest([this]() {
+        ESP_LOGI(TAG, "On Shutdown Request (no-op)");
+    });
+    power_save_timer_->SetEnabled(true);
+}
+
+void XiaozhiCardBoard::Sleep()
+{
+    ESP_LOGI(TAG, "Sleep");
+
+    auto& app = Application::GetInstance();
+    auto& audio_service = app.GetAudioService();
+    bool was_wake_word_running = audio_service.IsWakeWordRunning();
+    if (was_wake_word_running) {
+        audio_service.EnableWakeWordDetection(false);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    AudioCodec* codec = GetAudioCodec();
+    if (codec) {
+        codec->EnableInput(false);
+        codec->EnableOutput(false);
+    }
+    audio_service.Stop();
+
+    lvgl_port_lock(0);
+    lv_obj_t* scr_before = lv_screen_active();
+    lv_screen_load(display_->scr_sleep_);
+    lv_refr_now(NULL);
+    lvgl_port_unlock();
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    while (1) {
+        esp_task_wdt_reset();
+        esp_sleep_enable_timer_wakeup(5 * 60 * 1000000ULL);  // 5 分钟定时唤醒
+        esp_err_t err = esp_light_sleep_start();
+        ESP_LOGI(TAG, "Woke up, err = %s", esp_err_to_name(err));
+        esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+        if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+            constexpr int SAMPLE_COUNT = 5;
+            int low_count = 0;
+            for (int i = 0; i < SAMPLE_COUNT; ++i) {
+                float bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
+                ESP_LOGI(TAG, "[%d] 电压采样：%.2f V", i + 1, bat_vol);
+                if (bat_vol <= BAT_VOL_EMPTY && !charger_->GetChargeState()) {
+                    low_count++;
+                }
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+            if (low_count >= SAMPLE_COUNT) {
+                ESP_LOGW(TAG, "电压均低于 %.2fV，执行关机", BAT_VOL_EMPTY);
+                Shutdown();
+                return;
+            }
+            continue;
+        }
+        break;
+    }
+
+    ESP_LOGI(TAG, "唤醒");
+    lvgl_port_lock(0);
+    lv_screen_load(scr_before);
+    lvgl_port_unlock();
+
+    if (codec) {
+        codec->EnableInput(true);
+        codec->EnableOutput(true);
+    }
+    audio_service.Start();
+    if (was_wake_word_running) {
+        audio_service.EnableWakeWordDetection(true);
+    }
+    if (power_save_timer_) {
+        power_save_timer_->WakeUp();
+    }
+}
+
+void XiaozhiCardBoard::WakeUp()
+{
+    ESP_LOGI(TAG, "WakeUp");
+}
+
+void XiaozhiCardBoard::SetPowerSaveMode(bool en)
+{
+    if (!power_save_timer_) return;
+    power_save_timer_->SetEnabled(en);
+}
+
+bool XiaozhiCardBoard::GetPowerSaveMode()
+{
+    return power_save_timer_ ? power_save_timer_->GetState() : false;
+}
+
 void XiaozhiCardBoard::PowerOnModem() 
 {
     ESP_LOGI(TAG, "Power On Modem");
@@ -737,12 +869,12 @@ XiaozhiCardBoard::XiaozhiCardBoard() : DualNetworkBoard(ML307R_PIN_TX, ML307R_PI
     InitializeCharger();
     InitializeGuage();
     InitializeSpi();
-    InitializeDisplay(); 
+    InitializeDisplay();
     InitializeButtons();
     InitializeIndicator();
-    InitializeTools();
+    InitializePowerSaveTimer();
     StartBoardEventTask();
-        
+
     StartUp();
     if (IsGuidePageRequired()) {
         lv_screen_load(display_->scr_startup_);  
@@ -759,10 +891,20 @@ XiaozhiCardBoard::XiaozhiCardBoard() : DualNetworkBoard(ML307R_PIN_TX, ML307R_PI
         Disable4G(); 
     }  
 
+    InitializeTools();
+
+    // 设置唤醒源，按键，触摸唤醒 
+    uint64_t wakeup_pins = BIT64(USER_BUTTON_GPIO) | BIT64(TOUCH_INT_GPIO);
+    esp_sleep_enable_ext1_wakeup(wakeup_pins, ESP_EXT1_WAKEUP_ANY_LOW); 
+    esp_sleep_enable_gpio_wakeup();
 }
 
 XiaozhiCardBoard::~XiaozhiCardBoard()
 {
+    if (power_save_timer_) {
+        delete power_save_timer_;
+        power_save_timer_ = nullptr;
+    }
     if (charger_) {
         delete charger_;
     }
@@ -817,6 +959,17 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
     /* 充电状态 */
     charging = (charger_->GetChargeState() != 0);
     discharging = !charging;
+    if (!power_save_timer_user_set_ && power_save_timer_ != nullptr) { // 用户没有设置过自动休眠时，根据充电状态设置自动休眠
+        if (last_charging != charging) {
+            last_charging = charging;
+            SetPowerSaveMode(!charging);  // 充电时关闭自动休眠，未充电时开启
+            if (lv_screen_active() == display_->scr_setup_ && lvgl_port_lock(1000)) {
+                lv_label_set_text(display_->setup_label_auto_sleep_,
+                    GetPowerSaveMode() ? "关闭自动休眠" : "开启自动休眠");
+                lvgl_port_unlock();
+            }
+        }
+    }
     if (charging) {
         auto &app = Application::GetInstance();
         if (app.GetDeviceState() != kDeviceStateListening) {
@@ -871,14 +1024,13 @@ void XiaozhiCardBoard::ClearDisplay(uint8_t color)
     static uint8_t *buf = nullptr;
     static size_t buf_size = 0;
     if (panel_ == nullptr) {
-        printf("ClearDisplay: panel_ is null!\n");
         return;
     }
     buf_size = EPD_RES_WIDTH * EPD_RES_HEIGHT;
     if (buf == nullptr) {
         buf = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
         if (!buf) {
-            printf("ClearDisplay: failed to allocate %u bytes in SPIRAM!\n", (unsigned)buf_size);
+            ESP_LOGE(TAG, "Failed to allocate %u bytes in SPIRAM!", (unsigned)buf_size);
             return;
         }
     }

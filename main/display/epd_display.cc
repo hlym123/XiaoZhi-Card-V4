@@ -336,11 +336,11 @@ static void scr_main_event_cb(lv_event_t * e) {
             board.GetBatteryLevel(level, charge, discahrge);
             lv_label_set_text_fmt(display->setup_label_battery_, "%d", level);
             // 自动休眠 
-            // if (board.GetPowerSaveMode()) {
-            //     lv_label_set_text(display->setup_label_auto_sleep_, "关闭自动休眠");
-            // } else {
-            //     lv_label_set_text(display->setup_label_auto_sleep_, "开启自动休眠");
-            // }
+            if (board.GetPowerSaveMode()) {
+                lv_label_set_text(display->setup_label_auto_sleep_, "关闭自动休眠");
+            } else {
+                lv_label_set_text(display->setup_label_auto_sleep_, "开启自动休眠");
+            }
             lv_screen_load(display->scr_setup_);
         } else if (dir == LV_DIR_LEFT) { // 左滑
             ESP_LOGI("Gesture", "Swipe left detected"); 
@@ -443,10 +443,10 @@ static void scr_setup_event_cb(lv_event_t * e) {
         if (vol <= 90) { vol += 10;} else { vol = 100; }
         codec->SetOutputVolume(vol);
         lv_label_set_text_fmt(display->label_volume_, "%d", vol);
-    } else if (btn == display->setup_btn_sleep_) { // 休眠 
-        // if (display->on_manual_sleep_) {
-        //     display->on_manual_sleep_();
-        // }
+    } else if (btn == display->setup_btn_sleep_) { // 休眠
+        if (display->on_manual_sleep_) {
+            display->on_manual_sleep_();
+        }
     } else if (btn == display->setup_btn_shutdown_) { // 关机
         if (display->on_shutdown_) {
             display->on_shutdown_();
@@ -467,9 +467,9 @@ static void scr_setup_event_cb(lv_event_t * e) {
         lv_screen_load(display->scr_main_);
         display->FullRefresh();
     } else if (btn == display->setup_btn_auto_sleep_) { // 自动休眠开/关 
-        // if (display->on_auto_sleep_changed_) {
-        //     display->on_auto_sleep_changed_();
-        // }
+        if (display->on_auto_sleep_changed_) {
+            display->on_auto_sleep_changed_();
+        }
     } 
 } 
 
@@ -1545,7 +1545,7 @@ void EpdDisplay::SetupUI() {
     setup_btn_auto_sleep_ = lv_button_create(scr_setup_);
     lv_obj_remove_style_all(setup_btn_auto_sleep_);
     lv_obj_set_size(setup_btn_auto_sleep_, 160, 32);
-    lv_obj_align(setup_btn_auto_sleep_, LV_ALIGN_TOP_MID, 0, 111);
+    lv_obj_align(setup_btn_auto_sleep_, LV_ALIGN_TOP_MID, 0, 113);
     lv_obj_add_event_cb(setup_btn_auto_sleep_, scr_setup_event_cb, LV_EVENT_CLICKED, NULL);
     setup_label_auto_sleep_ = lv_label_create(setup_btn_auto_sleep_);
     lv_obj_set_style_text_font(setup_label_auto_sleep_, fonts_.text_font, 0);

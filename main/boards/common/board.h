@@ -51,9 +51,11 @@ public:
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;
 
-    // Add for XiaoZhi-Card 
-    virtual void ClearDisplay(uint8_t color);
-    virtual void SetIndicator(uint8_t r, uint8_t g, uint8_t b);
+    // Add for XiaoZhi-Card
+    virtual bool PowerOff();                                    // 关机
+    virtual bool GetPowerSaveMode();                            // 获取省电模式
+    virtual void ClearDisplay(uint8_t color);                   // 清屏
+    virtual void SetIndicator(uint8_t r, uint8_t g, uint8_t b); // 设置指示灯
 };
 
 #define DECLARE_BOARD(BOARD_CLASS_NAME) \

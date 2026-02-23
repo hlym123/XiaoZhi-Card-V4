@@ -10,12 +10,15 @@ public:
     PowerSaveTimer(int cpu_max_freq, int seconds_to_sleep = 20, int seconds_to_shutdown = -1);
     ~PowerSaveTimer();
 
-    void SetEnabled(bool enabled);
-    void OnEnterSleepMode(std::function<void()> callback);
-    void OnExitSleepMode(std::function<void()> callback);
-    void OnShutdownRequest(std::function<void()> callback);
-    void WakeUp();
-
+    // Add for XiaoZhi-Card Board. 设置省电模式使能
+    void SetEnabled(bool enabled);                          // 设置省电模式使能
+    void OnEnterSleepMode(std::function<void()> callback);  // 进入省电模式回调
+    void OnExitSleepMode(std::function<void()> callback);   // 退出省电模式回调
+    void OnShutdownRequest(std::function<void()> callback); // 请求关机回调
+    void WakeUp();                                          // 唤醒
+    bool GetState() const { return enabled_; }              // 获取省电模式使能状态
+    void ManualSleep();                                     // 手动休眠
+    void ResetTick();                                       // 重置计数器
 private:
     void PowerSaveCheck();
 

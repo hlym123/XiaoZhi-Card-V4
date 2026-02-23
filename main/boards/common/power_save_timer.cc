@@ -130,3 +130,23 @@ void PowerSaveTimer::WakeUp() {
         }
     }
 }
+
+
+// Add for XiaoZhi-Card Board. 
+/**
+ * 手动休眠
+ */
+void PowerSaveTimer::ManualSleep() {
+    ticks_ = 0; // 重置计数器
+    if (!in_sleep_mode_ && on_enter_sleep_mode_) {
+        in_sleep_mode_ = true;
+        on_enter_sleep_mode_();
+    }
+}
+
+/**
+ * 重置计数器
+ */
+void PowerSaveTimer::ResetTick() {
+    ticks_ = 0; // 重置计数器
+}
