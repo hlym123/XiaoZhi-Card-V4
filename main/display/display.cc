@@ -44,7 +44,6 @@ Display::~Display() {
         esp_timer_stop(notification_timer_);
         esp_timer_delete(notification_timer_);
     }
-
     if (network_label_ != nullptr) {
         lv_obj_del(network_label_);
         lv_obj_del(notification_label_);
@@ -53,7 +52,7 @@ Display::~Display() {
         lv_obj_del(battery_label_);
         lv_obj_del(emotion_label_);
     }
-    if( low_battery_popup_ != nullptr ) {
+    if (low_battery_popup_ != nullptr) {
         lv_obj_del(low_battery_popup_);
     }
     if (pm_lock_ != nullptr) {
@@ -159,11 +158,17 @@ void Display::UpdateStatusBar(bool update_all) {
                 if (lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // 如果低电量提示框隐藏，则显示
                     lv_obj_remove_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
                     app.PlaySound(Lang::Sounds::OGG_LOW_BATTERY);
+                    if (main_btn_chat_ != nullptr) { // 如果对话按钮存在，则隐藏
+                        lv_obj_add_flag(main_btn_chat_, LV_OBJ_FLAG_HIDDEN);
+                    }
                 }
             } else {
                 // Hide the low battery popup when the battery is not empty
                 if (!lv_obj_has_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN)) { // 如果低电量提示框显示，则隐藏
                     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+                    if (main_btn_chat_ != nullptr) { // 如果对话按钮存在，则显示
+                        lv_obj_remove_flag(main_btn_chat_, LV_OBJ_FLAG_HIDDEN);
+                    }
                 }
             }
         }
