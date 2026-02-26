@@ -35,4 +35,13 @@ public:
     int Read(int16_t* dest, int samples);
 };
 
+/** PDM 麦克风输入专用，输出为 dummy（Write 空实现） */
+class NoAudioCodecPdmInputOnly : public NoAudioCodec {
+public:
+    NoAudioCodecPdmInputOnly(int input_sample_rate, int output_sample_rate, gpio_num_t pdm_clk, gpio_num_t pdm_din);
+    virtual ~NoAudioCodecPdmInputOnly();
+    virtual int Write(const int16_t* data, int samples) override;
+    virtual int Read(int16_t* dest, int samples) override;
+};
+
 #endif // _NO_AUDIO_CODEC_H

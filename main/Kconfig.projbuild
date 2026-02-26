@@ -279,6 +279,9 @@ choice BOARD_TYPE
     config BOARD_TYPE_XIAOZHI_CARD
         bool "XiaoZhi Card"
         depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_PAPER_MONO
+        bool "Paper Mono"
+        depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_XINGZHI_Cube_0_85TFT_WIFI
         bool "无名科技星智0.85(WIFI)"
         depends on IDF_TARGET_ESP32S3

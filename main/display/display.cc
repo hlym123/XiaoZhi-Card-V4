@@ -305,8 +305,9 @@ void Display::SetContentVisible(bool visible) {
 void Display::FullRefresh() {
     DisplayLockGuard lock(this);  
     auto& board = Board::GetInstance();
-    board.ClearDisplay(0x00);
-    for (int i = 0; i < 5; i++) {
+    // board.ClearDisplay(0x00);
+    board.ClearDisplay(0xFF);
+    for (int i = 0; i < 2; i++) {
         lv_obj_invalidate(lv_screen_active());   
         lv_refr_now(NULL);
     }

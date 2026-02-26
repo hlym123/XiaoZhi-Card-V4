@@ -36,9 +36,9 @@
 
 static const char *TAG = "XiaoZhi-Card Board";
 
+
 LV_FONT_DECLARE(font_puhui_16_1);
 LV_FONT_DECLARE(font_awesome_16_4);
-
 
 enum class BoardEvent {
     Shutdown,
@@ -706,6 +706,8 @@ void XiaozhiCardBoard::Sleep()
     lvgl_port_unlock();
     vTaskDelay(pdMS_TO_TICKS(100));
 
+    float bat_vol;
+    int low_count = 0;
     while (1) {
         esp_task_wdt_reset();
         esp_sleep_enable_timer_wakeup(5 * 60 * 1000000ULL);  // 5 分钟定时唤醒
@@ -713,10 +715,15 @@ void XiaozhiCardBoard::Sleep()
         ESP_LOGI(TAG, "Woke up, err = %s", esp_err_to_name(err));
         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
         if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+            bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
+            if (bat_vol < 4.0f && !charger_->GetChargeState()) {
+                charger_->SetCharge(true);
+                ESP_LOGI(TAG, "休眠唤醒：电压 %.2fV 低于 4.0V，尝试开启充电", bat_vol);
+            }
             constexpr int SAMPLE_COUNT = 5;
-            int low_count = 0;
+            low_count = 0;
             for (int i = 0; i < SAMPLE_COUNT; ++i) {
-                float bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
+                bat_vol = guage_->getVolt(VOLT_MODE::VOLT) / 1000.0f;
                 ESP_LOGI(TAG, "[%d] 电压采样：%.2f V", i + 1, bat_vol);
                 if (bat_vol <= BAT_VOL_EMPTY && !charger_->GetChargeState()) {
                     low_count++;
@@ -962,7 +969,7 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
     if (!power_save_timer_user_set_ && power_save_timer_ != nullptr) { // 用户没有设置过自动休眠时，根据充电状态设置自动休眠
         if (last_charging != charging) {
             last_charging = charging;
-            SetPowerSaveMode(!charging);  // 充电时关闭自动休眠，未充电时开启
+            SetPowerSaveMode(!charging); // 充电时关闭自动休眠，未充电时开启
             if (lv_screen_active() == display_->scr_setup_ && lvgl_port_lock(1000)) {
                 lv_label_set_text(display_->setup_label_auto_sleep_,
                     GetPowerSaveMode() ? "关闭自动休眠" : "开启自动休眠");
@@ -991,14 +998,14 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
         } else {
             sent_enable_charge_for_low_battery = false;
         }
-        if (bat_vol <= BAT_VOL_EMPTY) { // 电量低于 3.5V 时，显示低电量提示 
-            if (countdown < 10) {
+        if (bat_vol <= BAT_VOL_EMPTY) { // 电量低于 BAT_VOL_EMPTY(3.4V) 时，显示低电量提示
+            if (countdown > 0 && countdown <= 10) {
                 snprintf(text_tip, sizeof(text_tip), "电量低 %d 秒后将关机", countdown);
                 lvgl_port_lock(0);
                 lv_label_set_text(display_->scr_tip_label_title_, "电量低，请充电！");
                 lv_label_set_text(display_->scr_tip_label_, text_tip);
                 if (countdown == 5) {
-                    scr = lv_screen_active(); // 记录当前页面 
+                    scr = lv_screen_active(); // 记录当前页面
                     lv_label_set_text(display_->scr_tip_label_title_, "电量低，请充电！");
                     lv_label_set_text(display_->scr_tip_label_, text_tip);
                     lv_screen_load(display_->scr_tip_);
@@ -1006,11 +1013,14 @@ bool XiaozhiCardBoard::GetBatteryLevel(int &level, bool &charging, bool &dischar
                 lvgl_port_unlock();
             }
             ESP_LOGI(TAG, "%s", text_tip);
-            if (--countdown <= 0) {
+            if (countdown > 0 && --countdown <= 0) {
                 ESP_LOGI(TAG, "低电量关机");
                 PostEvent(BoardEvent::Shutdown);
+                countdown = 0;  // 防止重复发送 Shutdown 事件
             }
-        } 
+        } else {
+            countdown = 10;  // 电压恢复至 BAT_VOL_EMPTY 以上时重置倒计时
+        }
     }
 
     return true;

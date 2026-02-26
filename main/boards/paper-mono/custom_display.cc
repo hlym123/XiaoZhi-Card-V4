@@ -1,4 +1,4 @@
-#include "epd_display.h"
+#include "custom_display.h"
 #include "assets/lang_config.h"
 #include "settings.h"
 
@@ -17,7 +17,7 @@
 
 #include "board.h"
 
-#define TAG "EpdDisplay"
+#define TAG "CustomDisplay"
 
 // Color definitions for dark theme
 #define DARK_BACKGROUND_COLOR       lv_color_hex(0x121212)     // Dark background
@@ -63,8 +63,8 @@ LV_FONT_DECLARE(font_wly_26);
 LV_FONT_DECLARE(font_sfy_34);
 LV_FONT_DECLARE(font_simple_48);
 
-// 升级确认队列 
-QueueHandle_t upgrade_queue = nullptr;
+// // 升级确认队列 
+// QueueHandle_t upgrade_queue = nullptr;
 
 
 // Define dark theme colors
@@ -96,7 +96,7 @@ const ThemeColors LIGHT_THEME = {
 
 LV_FONT_DECLARE(font_awesome_30_4);
 
-EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, 
+CustomDisplay::CustomDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel, 
     esp_lcd_touch_handle_t touch, DisplayFonts fonts, int width, int height)
     : panel_io_(panel_io), panel_(panel), touch_(touch), fonts_(fonts) {
     width_ = width;
@@ -114,11 +114,11 @@ EpdDisplay::EpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_
     }
 }
 
-SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+SpiCustomDisplay::SpiCustomDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
     esp_lcd_touch_handle_t touch,
     int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy,
     DisplayFonts fonts)
-    : EpdDisplay(panel_io, panel, touch, fonts, width, height) {
+    : CustomDisplay(panel_io, panel, touch, fonts, width, height) {
 
     // // draw white
     // std::vector<uint16_t> buffer(width_, 0xFFFF);
@@ -201,7 +201,7 @@ SpiEpdDisplay::SpiEpdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     SetupUI();
 }
 
-EpdDisplay::~EpdDisplay() {
+CustomDisplay::~CustomDisplay() {
     // 然后再清理 LVGL 对象
     if (content_ != nullptr) {
         lv_obj_del(content_);
@@ -227,11 +227,11 @@ EpdDisplay::~EpdDisplay() {
     }
 }
 
-bool EpdDisplay::Lock(int timeout_ms) {
+bool CustomDisplay::Lock(int timeout_ms) {
     return lvgl_port_lock(timeout_ms);
 }
 
-void EpdDisplay::Unlock() {
+void CustomDisplay::Unlock() {
     lvgl_port_unlock();
 }
 
@@ -476,7 +476,7 @@ static void scr_setup_event_cb(lv_event_t * e) {
 /**
  * 开机引导页 
  */
-void EpdDisplay::GuidePageUI()
+void CustomDisplay::GuidePageUI()
 {
     DisplayLockGuard lock(this);
 
@@ -786,7 +786,7 @@ void EpdDisplay::GuidePageUI()
 }
 
 #if CONFIG_USE_WECHAT_MESSAGE_STYLE
-void EpdDisplay::SetupUI() {
+void CustomDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
     auto screen = lv_screen_active();
@@ -900,7 +900,7 @@ void EpdDisplay::SetupUI() {
 #else
 #define  MAX_MESSAGES 20
 #endif
-void EpdDisplay::SetChatMessage(const char* role, const char* content) {
+void CustomDisplay::SetChatMessage(const char* role, const char* content) {
     DisplayLockGuard lock(this);
     if (content_ == nullptr) {
         return;
@@ -1083,7 +1083,7 @@ void EpdDisplay::SetChatMessage(const char* role, const char* content) {
     chat_message_label_ = msg_text;
 }
 
-void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
+void CustomDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     DisplayLockGuard lock(this);
     if (content_ == nullptr) {
         return;
@@ -1185,7 +1185,7 @@ void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     }
 }
 #else
-void EpdDisplay::SetupUI() {
+void CustomDisplay::SetupUI() {
     DisplayLockGuard lock(this);
 
     lv_obj_t *label = nullptr;
@@ -1195,7 +1195,7 @@ void EpdDisplay::SetupUI() {
     lv_style_set_bg_opa(&style_btn, LV_OPA_TRANSP);     
     lv_style_set_border_color(&style_btn, lv_color_black());
     lv_style_set_border_width(&style_btn, 2);
-    lv_style_set_radius(&style_btn, 10);                
+    lv_style_set_radius(&style_btn, 20);                
     lv_style_set_pad_all(&style_btn, 10);
 
 //================================================================
@@ -1238,28 +1238,24 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_radius(status_bar_, 0, 0);
     lv_obj_set_style_bg_color(status_bar_, current_theme_.background, 0);
     lv_obj_set_style_text_color(status_bar_, current_theme_.text, 0);
-    // Add for XiaoZhi-Card Board. 状态栏不滚动
-    lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_SCROLLABLE);  
+    lv_obj_set_style_pad_top(container_, 5, 0); // 状态栏下移 5 像素
+    lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Content */
     content_ = lv_obj_create(container_);
     lv_obj_set_scrollbar_mode(content_, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_radius(content_, 0, 0);
     lv_obj_set_width(content_, LV_HOR_RES);
-    lv_obj_set_flex_grow(content_, 1);
-    lv_obj_set_style_pad_all(content_, 5, 0);
+    lv_obj_set_flex_grow(content_, 1);  // 在 container 中占满剩余空间
+    lv_obj_set_style_pad_top(content_, 30, 0);   // emotion/chat 下移
     lv_obj_set_style_bg_color(content_, current_theme_.chat_background, 0);
-    lv_obj_set_style_border_color(content_, current_theme_.border, 0); // Border color for content
-
-    lv_obj_set_flex_flow(content_, LV_FLEX_FLOW_COLUMN); // 垂直布局（从上到下）
-    // lv_obj_set_flex_align(content_, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_SPACE_EVENLY); // 子对象居中对齐，等距分布
-    // Add for XiaoZhi-Card Board. 子对象顶部对齐，居中对齐，顶部对齐
-    lv_obj_set_flex_align(content_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_border_color(content_, current_theme_.border, 0);
 
     emotion_label_ = lv_label_create(content_);
     lv_obj_set_style_text_font(emotion_label_, &font_awesome_30_4, 0);
     lv_obj_set_style_text_color(emotion_label_, current_theme_.text, 0);
     lv_label_set_text(emotion_label_, FONT_AWESOME_MICROCHIP_AI);
+    lv_obj_align(emotion_label_, LV_ALIGN_TOP_MID, 0, 30);
 
     preview_image_ = lv_image_create(content_);
     lv_obj_set_size(preview_image_, width_ * 0.5, height_ * 0.5);
@@ -1268,15 +1264,12 @@ void EpdDisplay::SetupUI() {
 
     chat_message_label_ = lv_label_create(content_);
     lv_label_set_text(chat_message_label_, "");
-    // lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);                   // 限制宽度为屏幕宽度的 90%
-    // lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);           // 设置为自动换行模式
-    // lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0); // 设置文本居中对齐
-    // lv_obj_set_style_text_color(chat_message_label_, current_theme_.text, 0);
-    // Add for XiaoZhi-Card Board. 限制宽度为屏幕宽度的 90%，限制高度为屏幕高度的 40%，设置为自动换行模式，设置文本居中对齐
-    lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);                   // 限制宽度为屏幕宽度的 90%
-    lv_obj_set_height(chat_message_label_, LV_VER_RES * 0.4);                  // 限制高度，防止与按钮区域重叠 -- 文字被遮挡，待处理  
-    lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);           // 设置为自动换行模式
-    lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0); // 设置文本居中对齐
+    lv_obj_set_width(chat_message_label_, LV_HOR_RES * 0.9);
+    lv_obj_set_height(chat_message_label_, LV_VER_RES * 0.8);
+    lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(chat_message_label_, current_theme_.text, 0);
+    lv_obj_align(chat_message_label_, LV_ALIGN_TOP_MID, 0, 160);
 
     /* Status bar */
     lv_obj_set_flex_flow(status_bar_, LV_FLEX_FLOW_ROW);
@@ -1290,7 +1283,7 @@ void EpdDisplay::SetupUI() {
     lv_label_set_text(network_label_, "");
     lv_obj_set_style_text_font(network_label_, fonts_.icon_font, 0);
     lv_obj_set_style_text_color(network_label_, current_theme_.text, 0);
-    lv_obj_set_style_pad_left(network_label_, 2, 0); // 内移两个像素 
+    lv_obj_set_style_pad_left(network_label_, 6, 0); // 信号内移 6 像素
 
     notification_label_ = lv_label_create(status_bar_);
     lv_obj_set_flex_grow(notification_label_, 1);
@@ -1314,8 +1307,8 @@ void EpdDisplay::SetupUI() {
     lv_label_set_text(battery_label_, "");
     lv_obj_set_style_text_font(battery_label_, fonts_.icon_font, 0);
     lv_obj_set_style_text_color(battery_label_, current_theme_.text, 0);
-    lv_obj_set_style_pad_top(battery_label_, 2, 0);   // 下移两个像素 
-    lv_obj_set_style_pad_right(battery_label_, 2, 0); // 内移两个像素 
+    lv_obj_set_style_pad_top(battery_label_, 2, 0);
+    lv_obj_set_style_pad_right(battery_label_, 6, 0); // 电量内移 6 像素
 
     low_battery_popup_ = lv_obj_create(scr_main_);
     lv_obj_set_scrollbar_mode(low_battery_popup_, LV_SCROLLBAR_MODE_OFF);
@@ -1332,14 +1325,14 @@ void EpdDisplay::SetupUI() {
     /* 是否升级选择 */
     main_btn_confirm_upgrade_ = lv_btn_create(scr_main_);
     lv_obj_remove_style_all(main_btn_confirm_upgrade_);  
-    lv_obj_set_size(main_btn_confirm_upgrade_, 108, 40);
+    lv_obj_set_size(main_btn_confirm_upgrade_, 180, 80);
     lv_obj_align(main_btn_confirm_upgrade_, LV_ALIGN_CENTER, 0, -10);
     lv_obj_clear_flag(main_btn_confirm_upgrade_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
     lv_obj_add_event_cb(main_btn_confirm_upgrade_, [](lv_event_t* e) {
         auto& app = Application::GetInstance();
         app.PlaySound(Lang::Sounds::OGG_CLICK);
         int upgrade = 1;
-        if (upgrade_queue) xQueueSend(upgrade_queue, &upgrade, 1);
+        // if (upgrade_queue) xQueueSend(upgrade_queue, &upgrade, 1);
     }, LV_EVENT_CLICKED, NULL);
     lv_obj_add_style(main_btn_confirm_upgrade_, &style_btn, 0);
     lv_obj_add_flag(main_btn_confirm_upgrade_, LV_OBJ_FLAG_HIDDEN);
@@ -1350,14 +1343,14 @@ void EpdDisplay::SetupUI() {
     lv_obj_set_style_text_color(label, lv_color_black(), 0);
     main_btn_skip_upgrade_ = lv_btn_create(scr_main_);
     lv_obj_remove_style_all(main_btn_skip_upgrade_); 
-    lv_obj_set_size(main_btn_skip_upgrade_, 108, 40);
+    lv_obj_set_size(main_btn_skip_upgrade_, 180, 80);
     lv_obj_align(main_btn_skip_upgrade_, LV_ALIGN_CENTER, 0, 50);
     lv_obj_clear_flag(main_btn_skip_upgrade_, LV_OBJ_FLAG_SCROLL_ON_FOCUS); 
     lv_obj_add_event_cb(main_btn_skip_upgrade_, [](lv_event_t* e) {
         auto& app = Application::GetInstance();
         app.PlaySound(Lang::Sounds::OGG_CLICK);
         int upgrade = 0;
-        if (upgrade_queue) xQueueSend(upgrade_queue, &upgrade, 1);
+        // if (upgrade_queue) xQueueSend(upgrade_queue, &upgrade, 1);
     }, LV_EVENT_CLICKED, NULL);
     lv_obj_add_style(main_btn_skip_upgrade_, &style_btn, 0);
     lv_obj_add_flag(main_btn_skip_upgrade_, LV_OBJ_FLAG_HIDDEN);
@@ -1370,8 +1363,8 @@ void EpdDisplay::SetupUI() {
     /* 对话状态按钮 */
     main_btn_chat_ = lv_btn_create(scr_main_);
     lv_obj_remove_style_all(main_btn_chat_);
-    lv_obj_align(main_btn_chat_, LV_ALIGN_TOP_MID, 0, 215);
-    lv_obj_set_size(main_btn_chat_, 108, 40);
+    lv_obj_align(main_btn_chat_, LV_ALIGN_BOTTOM_MID, 0, -50);
+    lv_obj_set_size(main_btn_chat_, 180, 80);
     lv_obj_remove_flag(main_btn_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(main_btn_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_style(main_btn_chat_, &style_btn, 0);
@@ -1384,8 +1377,8 @@ void EpdDisplay::SetupUI() {
     /* 新对话按钮 */
     main_btn_new_chat_ = lv_btn_create(scr_main_);
     lv_obj_remove_style_all(main_btn_new_chat_);
-    lv_obj_align(main_btn_new_chat_, LV_ALIGN_TOP_MID, 0, 150);
-    lv_obj_set_size(main_btn_new_chat_, 108, 40);
+    lv_obj_align(main_btn_new_chat_, LV_ALIGN_BOTTOM_MID, 0, -200);
+    lv_obj_set_size(main_btn_new_chat_, 180, 80);
     lv_obj_remove_flag(main_btn_new_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(main_btn_new_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_style(main_btn_new_chat_, &style_btn, 0);
@@ -1636,7 +1629,7 @@ void EpdDisplay::SetupUI() {
     // lv_screen_load(scr_startup_);
 }
 
-void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
+void CustomDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
     DisplayLockGuard lock(this);
     if (preview_image_ == nullptr) {
         return;
@@ -1664,7 +1657,7 @@ void EpdDisplay::SetPreviewImage(const lv_img_dsc_t* img_dsc) {
 }
 #endif
 
-void EpdDisplay::SetEmotion(const char* emotion) {
+void CustomDisplay::SetEmotion(const char* emotion) {
     struct Emotion {
         const char* icon;
         const char* text;
@@ -1728,7 +1721,7 @@ void EpdDisplay::SetEmotion(const char* emotion) {
 #endif
 }
 
-void EpdDisplay::SetIcon(const char* icon) {
+void CustomDisplay::SetIcon(const char* icon) {
     DisplayLockGuard lock(this);
     if (emotion_label_ == nullptr) {
         return;
@@ -1745,7 +1738,7 @@ void EpdDisplay::SetIcon(const char* icon) {
 #endif
 }
 
-void EpdDisplay::SetTheme(const std::string& theme_name) {
+void CustomDisplay::SetTheme(const std::string& theme_name) {
     return; // For XiaoZhi-Card Board, disable dark mode.
 
     DisplayLockGuard lock(this);

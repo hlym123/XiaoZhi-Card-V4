@@ -3,6 +3,7 @@
 #include <esp_log.h>
 #include <cmath>
 #include <cstring>
+#include <driver/i2s_pdm.h>
 
 #define TAG "NoAudioCodec"
 
@@ -329,4 +330,73 @@ int NoAudioCodecSimplexPdm::Read(int16_t* dest, int samples) {
 
     // 计算实际读取的样本数
     return bytes_read / sizeof(int16_t);
+}
+
+/* NoAudioCodecPdmInputOnly: PDM mic input only, output dummy */
+NoAudioCodecPdmInputOnly::NoAudioCodecPdmInputOnly(int input_sample_rate, int output_sample_rate,
+                                                   gpio_num_t pdm_clk, gpio_num_t pdm_din) {
+    duplex_ = false;
+    input_reference_ = false;
+    input_channels_ = 1;
+    input_sample_rate_ = input_sample_rate;
+    output_sample_rate_ = output_sample_rate;
+    tx_handle_ = nullptr;  /* 无输出 */
+
+#if SOC_I2S_SUPPORTS_PDM_RX
+    i2s_chan_config_t rx_chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    rx_chan_cfg.dma_desc_num = AUDIO_CODEC_DMA_DESC_NUM;
+    rx_chan_cfg.dma_frame_num = AUDIO_CODEC_DMA_FRAME_NUM;
+    rx_chan_cfg.auto_clear_after_cb = true;
+    rx_chan_cfg.auto_clear_before_cb = false;
+    rx_chan_cfg.intr_priority = 0;
+    ESP_ERROR_CHECK(i2s_new_channel(&rx_chan_cfg, NULL, &rx_handle_));
+
+    i2s_pdm_rx_config_t pdm_cfg = {
+        .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG((uint32_t)input_sample_rate_),
+#if SOC_I2S_SUPPORTS_PDM2PCM
+        .slot_cfg = I2S_PDM_RX_SLOT_PCM_FMT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+#else
+        .slot_cfg = I2S_PDM_RX_SLOT_RAW_FMT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
+#endif
+        .gpio_cfg = {
+            .clk = pdm_clk,
+            .din = pdm_din,
+            .invert_flags = { .clk_inv = false },
+        },
+    };
+    ESP_ERROR_CHECK(i2s_channel_init_pdm_rx_mode(rx_handle_, &pdm_cfg));
+    ESP_LOGI(TAG, "PDM input-only codec: %d Hz, CLK=%d DIN=%d", input_sample_rate_, pdm_clk, pdm_din);
+#else
+    ESP_LOGE(TAG, "PDM RX not supported");
+#endif
+}
+
+NoAudioCodecPdmInputOnly::~NoAudioCodecPdmInputOnly() {
+    if (rx_handle_ != nullptr) {
+        i2s_channel_disable(rx_handle_);
+        i2s_del_channel(rx_handle_);
+        rx_handle_ = nullptr;
+    }
+}
+
+int NoAudioCodecPdmInputOnly::Write(const int16_t* data, int samples) {
+    (void)data;
+    (void)samples;
+    return 0;  /* 输出 dummy */
+}
+
+int NoAudioCodecPdmInputOnly::Read(int16_t* dest, int samples) {
+#if SOC_I2S_SUPPORTS_PDM_RX
+    if (rx_handle_ == nullptr) return 0;
+    size_t bytes_read;
+    if (i2s_channel_read(rx_handle_, dest, samples * sizeof(int16_t), &bytes_read, portMAX_DELAY) != ESP_OK) {
+        ESP_LOGE(TAG, "PDM Read Failed!");
+        return 0;
+    }
+    return bytes_read / sizeof(int16_t);
+#else
+    (void)dest;
+    (void)samples;
+    return 0;
+#endif
 }

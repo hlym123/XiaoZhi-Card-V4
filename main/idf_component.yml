@@ -74,6 +74,10 @@ dependencies:
     rules:
     - if: target in [esp32c3]
 
+  # Paper Mono (M5Stack PaperMono WiFi)
+  m5stack/m5pm1: ^1.0.4
+  m5stack/m5ioe1: ^1.0.4
+
   ## Required IDF version
   idf:
     version: '>=5.4.0'
