@@ -80,6 +80,19 @@ const ThemeColors DARK_THEME = {
     .low_battery = DARK_LOW_BATTERY_COLOR
 };
 
+// PaperMono develop 青锋渡 (scr_test)
+static const char *scr_test_title_str = "青锋渡";
+static const char *scr_test_author_str = "原创";
+static const char *scr_test_pages_arr[] = {
+    "寒江渡头，朔风卷着雪沫子，打在林砚的青布长衫上，沙沙作响。他腰间悬着一柄无鞘青锋，剑刃映着漫天飞雪，泛着冷冽的光——这是青锋剑沈砚秋的佩剑，十年前，沈砚秋为护破阵剑谱，惨死于黑风寨之手，剑谱不翼而飞，唯有这柄青锋，被他临终前托付给了年幼的弟子林砚。林砚守在渡头三日，只为等一个人。黑风寨寨主周虎，今日要从这渡头过江，前往江南与盐商分赃，而他身上，藏着当年被夺走的破阵剑谱。十年隐忍，林砚从一个懵懂孩童，成长为能独当一面的剑客，只为今日，替师报仇，夺回剑谱，还师门一个清白。",
+    "日头西斜，雪势渐缓，一阵马蹄声踏碎江面上的寂静。只见周虎一身黑衣，腰挂鬼头刀，带着十几个喽啰，簇拥着一辆马车，缓缓行至渡头。他面色黝黑，满脸横肉，眼神凶戾，正是当年亲手斩杀沈砚秋的凶手。小子，挡路找死？周虎瞥见林砚，语气嚣张，鬼头刀在手中掂了掂，寒光乍现。喽啰们纷纷围了上来，个个手持兵器，虎视眈眈。林砚身形未动，只是缓缓抽出腰间青锋，剑鸣清越，划破寒空。周虎，十年前，你杀我师父，夺我剑谱，今日，我林砚在此，要你血债血偿！他的声音不高，却带着不容置疑的决绝，眼底是积压了十年的恨意。",
+    "周虎哈哈大笑，眼中满是不屑：就凭你？一个乳臭未干的小子，也敢在我面前放肆？当年沈砚秋都不是我的对手，何况是你！说罢，他挥刀直扑而来，鬼头刀带着呼啸的风声，劈向林砚面门。林砚身形灵巧一避，青锋剑顺势刺出，剑势轻盈如燕，却又凌厉如霜。他牢记师父临终所授的破阵剑法，剑招往来之间，行云流水，招招直逼周虎要害。周虎虽勇猛，却不及林砚灵巧，几个回合下来，便已气喘吁吁，身上多了几道浅浅的剑伤。喽啰们见状，纷纷挥兵上前，想要围攻林砚。林砚不慌不忙，青锋剑舞出一片剑花，剑光如织，将喽啰们逼得连连后退，惨叫声此起彼伏。",
+    "他虽孤身一人，却毫无惧色，每一剑都精准狠辣，尽显青锋剑派的风骨。周虎见手下伤亡惨重，心中大怒，使出浑身力气，鬼头刀横扫而出，势如破竹。林砚眼神一凝，不退反进，青锋剑直指周虎心口，正是破阵剑法的最后一式——破锋。这一剑，凝聚了他十年的功力，也凝聚了他对师父的思念与恨意。噗嗤一声，青锋剑刺穿了周虎的胸口。周虎瞪大双眼，满脸难以置信，缓缓倒了下去，手中的鬼头刀脱手落地。林砚拔出青锋，剑刃上的鲜血滴落在雪地上，绽开一朵朵红梅。",
+    "他从周虎怀中搜出破阵剑谱，泛黄的纸页上，是师父熟悉的字迹。林砚紧紧攥着剑谱，泪水混着雪水滑落，对着江面深深一拜：师父，弟子不辱使命，报仇雪恨，夺回剑谱了。雪停了，夕阳穿透云层，洒在江面上，波光粼粼。林砚收起青锋剑，抱着剑谱，转身离去。寒风吹起他的长衫，背影孤寂却挺拔。江湖路远，侠义长存，这柄青锋，将继续承载着青锋剑派的使命，守护一方安宁，书写一段新的江湖传奇。",
+};
+static const int scr_test_page_count_val = sizeof(scr_test_pages_arr) / sizeof(scr_test_pages_arr[0]);
+static int scr_test_page_idx_val = 0;
+
 // Define light theme colors
 const ThemeColors LIGHT_THEME = {
     .background = LIGHT_BACKGROUND_COLOR,
@@ -1377,7 +1390,7 @@ void CustomDisplay::SetupUI() {
     /* 新对话按钮 */
     main_btn_new_chat_ = lv_btn_create(scr_main_);
     lv_obj_remove_style_all(main_btn_new_chat_);
-    lv_obj_align(main_btn_new_chat_, LV_ALIGN_BOTTOM_MID, 0, -200);
+    lv_obj_align(main_btn_new_chat_, LV_ALIGN_BOTTOM_MID, 0, -170);
     lv_obj_set_size(main_btn_new_chat_, 180, 80);
     lv_obj_remove_flag(main_btn_new_chat_, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_add_event_cb(main_btn_new_chat_, scr_main_event_cb, LV_EVENT_CLICKED, NULL);
@@ -1391,6 +1404,35 @@ void CustomDisplay::SetupUI() {
 
     /* 添加手势触发回调 */
     lv_obj_add_event_cb(scr_main_, scr_main_event_cb, LV_EVENT_GESTURE, NULL);
+
+//================================================================
+// 测试页 (PaperMono develop 青锋渡)
+//================================================================
+    scr_test_ = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr_test_, current_theme_.background, 0);
+    lv_obj_set_style_text_font(scr_test_, fonts_.text_font, 0);
+    lv_obj_set_style_text_color(scr_test_, current_theme_.text, 0);
+    lv_obj_remove_flag(scr_test_, LV_OBJ_FLAG_SCROLLABLE);
+
+    scr_test_label_title_ = lv_label_create(scr_test_);
+    lv_obj_set_style_text_font(scr_test_label_title_, fonts_.text_font, 0);
+    lv_obj_set_style_text_color(scr_test_label_title_, current_theme_.text, 0);
+    lv_label_set_text(scr_test_label_title_, scr_test_title_str);
+    lv_obj_align(scr_test_label_title_, LV_ALIGN_TOP_MID, 0, 20);
+
+    scr_test_label_author_ = lv_label_create(scr_test_);
+    lv_obj_set_style_text_font(scr_test_label_author_, fonts_.text_font, 0);
+    lv_obj_set_style_text_color(scr_test_label_author_, current_theme_.text, 0);
+    lv_label_set_text(scr_test_label_author_, scr_test_author_str);
+    lv_obj_align(scr_test_label_author_, LV_ALIGN_TOP_MID, 0, 55);
+
+    scr_test_label_content_ = lv_label_create(scr_test_);
+    lv_obj_set_style_text_font(scr_test_label_content_, fonts_.text_font, 0);
+    lv_obj_set_style_text_color(scr_test_label_content_, current_theme_.text, 0);
+    lv_obj_set_width(scr_test_label_content_, LV_HOR_RES - 40);
+    lv_label_set_long_mode(scr_test_label_content_, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(scr_test_label_content_, scr_test_pages_arr[0]);
+    lv_obj_align(scr_test_label_content_, LV_ALIGN_TOP_MID, 0, 95);
 
 //================================================================
 // 设置页面  
@@ -1736,6 +1778,24 @@ void CustomDisplay::SetIcon(const char* icon) {
         lv_obj_add_flag(preview_image_, LV_OBJ_FLAG_HIDDEN);
     }
 #endif
+}
+
+void CustomDisplay::NextScrTestPage() {
+    if (scr_test_label_content_ == nullptr) return;
+    DisplayLockGuard lock(this);
+    scr_test_page_idx_val = (scr_test_page_idx_val + 1) % scr_test_page_count_val;
+    int idx = scr_test_page_idx_val;
+    lv_label_set_text(scr_test_label_content_, scr_test_pages_arr[idx]);
+    if (idx == 0) {
+        lv_obj_clear_flag(scr_test_label_title_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(scr_test_label_author_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(scr_test_label_author_, LV_ALIGN_TOP_MID, 0, 55);
+        lv_obj_align(scr_test_label_content_, LV_ALIGN_TOP_MID, 0, 95);
+    } else {
+        lv_obj_add_flag(scr_test_label_title_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(scr_test_label_author_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(scr_test_label_content_, LV_ALIGN_TOP_MID, 10, 30);
+    }
 }
 
 void CustomDisplay::SetTheme(const std::string& theme_name) {

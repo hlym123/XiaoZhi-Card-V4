@@ -258,18 +258,38 @@ void PaperMonoBoard::InitializeButtons()
 {
     user_button_.OnClick([this]() {
         Application::GetInstance().Schedule([] {
+            auto& board = Board::GetInstance();
+            auto display = board.GetDisplay();
             if (lvgl_port_lock(3000)) {
-                auto& board = Board::GetInstance();
-                auto display = board.GetDisplay();
-                bool is_main_screen = (lv_screen_active() == display->scr_main_);
-                lvgl_port_unlock();
-                if (!is_main_screen) return;
-                Application::GetInstance().ToggleChatState();
+                lv_obj_t *active = lv_screen_active();
+                if (display->scr_test_ != nullptr && active == display->scr_test_) {
+                    lvgl_port_unlock();
+                    display->NextScrTestPage();
+                } else if (active == display->scr_main_) {
+                    lvgl_port_unlock();
+                    Application::GetInstance().ToggleChatState();
+                } else {
+                    lvgl_port_unlock();
+                }
             }
         });
     });
-    user_button_.OnDoubleClick([this]() { 
-        
+    user_button_.OnDoubleClick([this]() {
+        Application::GetInstance().Schedule([] {
+            auto& board = Board::GetInstance();
+            auto display = board.GetDisplay();
+            if (display->scr_test_ == nullptr) return;
+            if (lvgl_port_lock(3000)) {
+                lv_obj_t *active = lv_screen_active();
+                if (active == display->scr_main_) {
+                    lv_screen_load(display->scr_test_);
+                } else if (active == display->scr_test_) {
+                    lv_screen_load(display->scr_main_);
+                }
+                lvgl_port_unlock();
+                display->FullRefresh();
+            }
+        });
     });
 
     /* GPIO_KEY2 单击切换背光: 20 -> 40 -> 60 -> 80 -> 100 -> 0 -> ... */

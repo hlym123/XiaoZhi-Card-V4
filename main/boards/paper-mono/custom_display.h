@@ -37,6 +37,7 @@ protected:
 
     void GuidePageUI();
     void SetupUI();
+    virtual void NextScrTestPage() override;
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 

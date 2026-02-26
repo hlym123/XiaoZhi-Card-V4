@@ -289,6 +289,10 @@ void Display::SetBtnNewChatVisible(bool visible) {
 /**
  * 主页面内容区域可见性设置
  */
+void Display::NextScrTestPage() {
+    /* 默认空实现，CustomDisplay 重写 */
+}
+
 void Display::SetContentVisible(bool visible) {
     DisplayLockGuard lock(this);  
     
