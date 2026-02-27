@@ -108,6 +108,8 @@ void PaperMonoBoard::InitializePmicIoe()
     }
     ESP_LOGI(TAG, "M5IOE1 initialized");
     pmic_ioe1_ready_ = true;
+
+    pmic_.setLedEnLevel(false); // 关闭电源指示灯
 }
 
 void PaperMonoBoard::InitializeSpi()
@@ -239,19 +241,18 @@ void PaperMonoBoard::InitializeBacklight()
 {
     if (!pmic_ioe1_ready_) return;
 
-    m5pm1_err_t err = pmic_.setPwmFrequency(1000);
-    if (err != M5PM1_OK) {
-        ESP_LOGE(TAG, "backlight setPwmFrequency fail: %d", err);
-        return;
-    }
-    err = pmic_.setPwmDuty(BL_PWM_CH, 80, false, true);
-    if (err != M5PM1_OK) {
-        ESP_LOGE(TAG, "backlight setPwmDuty fail: %d", err);
-        return;
-    }
-    pmic_.pinMode(BL_PWM_GPIO, ANALOG);  /* M5PM1 GPIO3 -> PWM0 */
+    pmic_.pinMode(BL_PWM_GPIO, OUTPUT);
 
-    ESP_LOGI(TAG, "backlight PWM: 1000Hz, 80%%");
+    /* Configure PWM block first, then switch pin to PWM output (some PMICs need this order) */
+    m5pm1_err_t err = pmic_.setPwmFrequency(1000);
+    ESP_LOGI(TAG, "backlight PWM setPwmFrequency(%d) success", 1000);
+
+    err = pmic_.setPwmDuty(BL_PWM_CH, 60, false, true);
+    ESP_LOGI(TAG, "backlight PWM setPwmDuty success: %d", 60);
+ 
+    pmic_.pinMode(BL_PWM_GPIO, ANALOG);  /* GPIO3 -> PWM0 output */
+    vTaskDelay(pdMS_TO_TICKS(10));       /* let mux settle */
+    ESP_LOGI(TAG, "backlight PWM: %d Hz, %d%%", 1000, 60);
 }
 
 void PaperMonoBoard::InitializeButtons()
@@ -295,6 +296,11 @@ void PaperMonoBoard::InitializeButtons()
     /* GPIO_KEY2 单击切换背光: 20 -> 40 -> 60 -> 80 -> 100 -> 0 -> ... */
     static const uint8_t BL_LEVELS[] = {20, 40, 60, 80, 100, 0};
     bl_key_.OnClick([this]() {
+        auto& app = Application::GetInstance();
+        if (app.GetDeviceState() == kDeviceStateStarting) {
+            ResetWifiConfiguration();
+        }
+        // app.ToggleChatState();
         if (!pmic_ioe1_ready_) return;
         bl_level_ = (bl_level_ + 1) % 6;
         uint8_t duty = BL_LEVELS[bl_level_];
