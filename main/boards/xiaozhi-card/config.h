@@ -6,9 +6,11 @@
 
 /* ---------------------------------------------------------------- */
 // Config 
-#define BAT_VOL_EMPTY 3.4  // 4G模组 ML307R 供电最小值 3.4V，瞬态工作电流能达到2A
-#define BAT_VOL_LOW   3.6  // 电池电压低于 3.5V 提示需要充电
-#define BAT_VOL_FULL  4.2  // 满电电压 
+#define BAT_VOL_EMPTY                   3.4   // 4G模组 ML307R 供电最小值 3.4V，瞬态工作电流能达到2A
+#define BAT_VOL_LOW                     3.6   // 电池电压低于 3.5V 提示需要充电
+#define BAT_VOL_FULL                    4.2   // 满电电压
+#define BAT_VOL_POWER_SAVE_THRESHOLD    4.00f // 未充电且低于此电压才开启省电模式
+#define BAT_VOL_ENABLE_CHARGE_THRESHOLD 4.05f // 未充电且低于此电压时尝试开启充电 
 
 /* ---------------------------------------------------------------- */
 // Systerm I2C
