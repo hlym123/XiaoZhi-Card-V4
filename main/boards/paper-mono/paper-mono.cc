@@ -242,16 +242,10 @@ void PaperMonoBoard::InitializeBacklight()
     if (!pmic_ioe1_ready_) return;
 
     pmic_.pinMode(BL_PWM_GPIO, OUTPUT);
-
-    /* Configure PWM block first, then switch pin to PWM output (some PMICs need this order) */
-    m5pm1_err_t err = pmic_.setPwmFrequency(1000);
-    ESP_LOGI(TAG, "backlight PWM setPwmFrequency(%d) success", 1000);
-
-    err = pmic_.setPwmDuty(BL_PWM_CH, 60, false, true);
-    ESP_LOGI(TAG, "backlight PWM setPwmDuty success: %d", 60);
+    pmic_.setPwmFrequency(1000);
+    pmic_.setPwmDuty(BL_PWM_CH, 60, false, true);
+    pmic_.pinMode(BL_PWM_GPIO, ANALOG);
  
-    pmic_.pinMode(BL_PWM_GPIO, ANALOG);  /* GPIO3 -> PWM0 output */
-    vTaskDelay(pdMS_TO_TICKS(10));       /* let mux settle */
     ESP_LOGI(TAG, "backlight PWM: %d Hz, %d%%", 1000, 60);
 }
 
