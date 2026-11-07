@@ -26,6 +26,7 @@ git submodule update --init --recursive
 > 长按底座按键到灯亮绿色，进入 USB 烧录固件模式。
 
 ```shell
+# idf version: 6.0-dev 
 idf.py build flash monitor
 ```
 

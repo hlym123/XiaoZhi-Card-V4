@@ -101,7 +101,7 @@ void PaperMonoBoard::InitializePmicIoe()
     }
     ESP_LOGI(TAG, "M5PM1 initialized");
 
-    m5ioe1_err_t ioe1_ret = ioe1_.begin(i2c_bus_, M5IOE1_DEFAULT_ADDR, M5IOE1_I2C_FREQ_DEFAULT, M5IOE1_INT_MODE_POLLING);
+    m5ioe1_err_t ioe1_ret = ioe1_.begin(i2c_bus_, 0x4F, M5IOE1_I2C_FREQ_DEFAULT, M5IOE1_INT_MODE_POLLING);
     if (ioe1_ret != M5IOE1_OK) {
         ESP_LOGE(TAG, "M5IOE1 init failed: %d", ioe1_ret);
         return;
